@@ -1,6 +1,6 @@
 // ИИ экипажа в духе RimWorld: потребности → задачи → перемещение по сетке корабля.
 import { CREW_SPEED, EAT_RESTORE, EAT_SECONDS, FOOD_DECAY, HYDRO_YIELD, MODULES, REST_DECAY, ROBOT_SPEED_MULT, SUFFOCATE_BELOW, DARK_WORK_MULT } from './defs';
-import { findPath, isWalkable, neighbors4, tileAt } from './grid';
+import { findPath, inBounds, isWalkable, neighbors4, tileAt } from './grid';
 import { dropCarry, dropLoose, materialsReady, planHaulJobs, removeStored, stepHaul } from './items';
 import { JOB_KINDS, defaultPriorities, type Crew, type Job, type JobKind, type Ship, type ShipModule, type Vec, type WorkPriority } from './state';
 import { airAt, blueprintAt, completeBlueprint, functional, isLit, moduleAt, walkableTiles, type ShipContext } from './ship';
@@ -40,6 +40,9 @@ export function normalizePriorities(c: Crew): void {
     }
   }
   c.priorities = next;
+  if (typeof c.draft !== 'boolean') c.draft = false;
+  const order = c.order;
+  if (!order || !Number.isInteger(order.x) || !Number.isInteger(order.y)) c.order = null;
 }
 
 export function jobKey(j: Pick<Job, 'kind' | 'targetId'>): string {
@@ -182,6 +185,7 @@ export function orderCryo(ship: Ship, crewId: number): string | null {
   if (!c) return 'Нет такого члена экипажа на борту';
   if (c.state === 'cryo') {
     c.state = 'idle';
+    c.draft = false;
     return null;
   }
   if (c.robot) return 'Роботу криосон не нужен';
@@ -189,12 +193,84 @@ export function orderCryo(ship: Ship, crewId: number): string | null {
   for (const pod of pods) {
     const path = findPath(ship, roundVec(c), { x: pod.x, y: pod.y });
     if (!path) continue;
+    c.draft = false;
+    c.order = null;
     c.job = { kind: 'cryo', targetId: pod.id, x: pod.x, y: pod.y };
     c.path = path;
     c.state = 'idle';
     return null;
   }
   return 'Нет свободной запитанной криокапсулы';
+}
+
+/** Повести пешку в клетку. Текущую работу бросает и кладёт груз. */
+export function orderMove(ship: Ship, crewId: number, x: number, y: number, nextId: () => number): string | null {
+  const c = ship.crew.find((o) => o.id === crewId);
+  if (!c) return 'Нет такого члена экипажа на борту';
+  if (c.state === 'cryo') return 'Сначала разбудите';
+  if (!inBounds(ship, x, y) || !isWalkable(tileAt(ship, x, y))) return 'Сюда не пройти';
+  if (c.job || c.carry) dropCarry(ship, c, nextId);
+  c.job = null;
+  c.state = 'idle';
+  c.timer = 0;
+  if (Math.round(c.x) === x && Math.round(c.y) === y) {
+    c.order = null;
+    c.path = [];
+    return null;
+  }
+  const path = findPath(ship, roundVec(c), { x, y });
+  if (!path) return 'Сюда не пройти';
+  c.order = { x, y };
+  c.path = path;
+  return null;
+}
+
+/** Прямое управление: пешка бросает работу и стоит, пока игрок не отправит её в клетку. */
+export function setDraft(ship: Ship, crewId: number, on: boolean, nextId: () => number): string | null {
+  const c = ship.crew.find((o) => o.id === crewId);
+  if (!c) return 'Нет такого члена экипажа на борту';
+  if (c.state === 'cryo') return 'Сначала разбудите';
+  c.draft = on;
+  if (!on) return null;
+  if (c.job || c.carry) dropCarry(ship, c, nextId);
+  c.job = null;
+  c.order = null;
+  c.path = [];
+  c.state = 'idle';
+  c.timer = 0;
+  return null;
+}
+
+/** Снять приказ идти. Работу, если она уже есть, не трогает. */
+export function clearOrder(ship: Ship, crewId: number): string | null {
+  const c = ship.crew.find((o) => o.id === crewId);
+  if (!c) return 'Нет такого члена экипажа на борту';
+  c.order = null;
+  if (!c.job) c.path = [];
+  return null;
+}
+
+/** Идёт к клетке приказа. Приказ снимается, когда пешка дошла. */
+function followOrder(ship: Ship, c: Crew, dt: number): void {
+  const goal = c.order;
+  if (!goal) return;
+  const at = Math.round(c.x) === goal.x && Math.round(c.y) === goal.y;
+  if (at && c.path.length === 0) {
+    c.order = null;
+    return;
+  }
+  const last = c.path[c.path.length - 1];
+  if (!last || last.x !== goal.x || last.y !== goal.y) {
+    const path = findPath(ship, roundVec(c), goal);
+    if (!path) {
+      c.order = null;
+      c.path = [];
+      return;
+    }
+    c.path = path;
+  }
+  moveAlong(c, dt);
+  if (c.order && c.path.length === 0 && Math.round(c.x) === c.order.x && Math.round(c.y) === c.order.y) c.order = null;
 }
 
 /** Поставить личный приоритет работы: 1 важнее всего, 4 — в конце, 0 — не делать. */
@@ -287,6 +363,19 @@ export function updateCrew(ship: Ship, dt: number, ctx: ShipContext): void {
       }
     }
 
+    // Прямое управление: пешка не ест, не спит и не берёт работу, пока игрок её не отпустит.
+    if (c.draft) {
+      if (c.job) releaseJob(ship, c, reserved, ctx.nextId);
+      if (c.state !== 'idle') c.state = 'idle';
+      if (c.order) followOrder(ship, c, dt);
+      else if (lowAir) {
+        const last = c.path[c.path.length - 1];
+        if (!last || airAt(ship, last.x, last.y) <= 0.6) c.path = findBreathableSpot(ship, c) ?? [];
+        moveAlong(c, dt);
+      } else c.path = [];
+      continue;
+    }
+
     switch (c.state) {
       case 'eating':
         c.timer -= dt;
@@ -362,6 +451,11 @@ export function updateCrew(ship: Ship, dt: number, ctx: ShipContext): void {
           moveAlong(c, dt);
           continue;
         }
+      }
+      // 3.5. Приказ «иди сюда» важнее работы, но не воздуха, еды и сна.
+      if (c.order) {
+        followOrder(ship, c, dt);
+        continue;
       }
       // 4. Работа: важные, пожары и пробоины впереди, остальное — по личному приоритету, внутри — ближайшая.
       const free = jobs.filter((j) => !reserved.has(jobKey(j)));
@@ -482,6 +576,8 @@ export function placeCrewOnBoard(ship: Ship, c: Crew): void {
   c.path = [];
   c.job = null;
   c.carry = c.carry ?? null;
+  c.draft = false;
+  c.order = null;
   c.state = 'idle';
   c.timer = 0;
   ship.crew.push(c);

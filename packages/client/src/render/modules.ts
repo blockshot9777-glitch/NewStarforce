@@ -1,6 +1,7 @@
 // Процедурная отрисовка модулей. Если положить PNG в public/sprites/<тип>.png,
 // будет использован спрайт (так можно подключить арт из оригинального STARFORCE.IO).
 import { MODULES, MODULE_TYPES, type ModuleType } from '@starforce/shared';
+import { drawModuleArt } from './kenney';
 
 const sprites = new Map<ModuleType, HTMLImageElement>();
 
@@ -39,10 +40,9 @@ export function drawModule(ctx: CanvasRenderingContext2D, type: ModuleType, x: n
   }
   ctx.save();
   ctx.translate((w - s) / 2, (h - s) / 2);
-  if (sprite) {
-    ctx.drawImage(sprite, 0, 0, s, s);
-  } else {
-    drawProcedural(ctx, type, s, look, t, def.color);
+  if (!drawModuleArt(ctx, type, 0, 0, s)) {
+    if (sprite) ctx.drawImage(sprite, 0, 0, s, s);
+    else drawProcedural(ctx, type, s, look, t, def.color);
   }
   ctx.restore();
   if (!look.powered && def.demand > 0 && look.enabled) {

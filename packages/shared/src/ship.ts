@@ -74,6 +74,8 @@ export function randomCrew(rng: Rng, id: number, x: number, y: number): Crew {
     state: 'idle',
     job: null,
     carry: null,
+    draft: false,
+    order: null,
     timer: 0,
   };
 }

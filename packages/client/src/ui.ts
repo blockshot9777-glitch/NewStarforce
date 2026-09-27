@@ -159,6 +159,14 @@ function handleAction(el: HTMLElement): void {
     case 'cryo':
       send({ c: 'cryo', crewId: id });
       break;
+    case 'draft': {
+      const on = own?.crew.find((c) => c.id === id)?.draft ?? false;
+      send({ c: 'draft', crewId: id, on: !on });
+      break;
+    }
+    case 'clearorder':
+      send({ c: 'clearOrder', crewId: id });
+      break;
     case 'priority': {
       const kind = el.dataset.kind as JobKind;
       const cur = own?.crew.find((c) => c.id === id)?.priorities[kind] ?? 3;
@@ -385,9 +393,10 @@ function renderCrew(own: OwnShipView | null): void {
         <td title="Здоровье">${bar(c.health, c.health < 35 ? '#ff5252' : '#69f0ae')}</td>
         <td title="Сытость">${c.robot ? '—' : bar(c.food, '#ffb74d')}</td>
         <td title="Бодрость">${c.robot ? '—' : bar(c.rest, '#64b5f6')}</td>
-        <td>${STATE_NAMES[c.state]}${c.job ? ` · ${JOB_NAMES[c.job]}` : ''}</td>
+        <td>${c.draft ? 'ведёт' : STATE_NAMES[c.state]}${c.job ? ` · ${JOB_NAMES[c.job]}` : ''}${c.order ? ` → ${c.order.x},${c.order.y}` : ''}</td>
         <td class="skills" title="Инженерия / Ботаника / Пилотирование / Бой">${s.engineering}/${s.botany}/${s.piloting}/${s.combat}</td>
-        <td>${c.robot ? '' : `<button data-act="cryo" data-id="${c.id}">${c.state === 'cryo' ? 'Разбудить' : '❄ Криосон'}</button>`}
+        <td><button data-act="draft" data-id="${c.id}" class="${c.draft ? 'on' : ''}" title="Прямое управление: пешка стоит, пока не прикажете идти">${c.draft ? 'Отпустить' : 'Вести'}</button>
+            ${c.robot ? '' : `<button data-act="cryo" data-id="${c.id}">${c.state === 'cryo' ? 'Разбудить' : '❄ Криосон'}</button>`}
             <button data-act="expcrew" data-id="${c.id}" class="${store.expeditionCrew.has(c.id) ? 'on' : ''}" title="Выбрать для высадки на планету">🚀</button></td>
       </tr><tr class="pri-row"><td colspan="7">${pri}</td></tr>`;
     })
@@ -396,7 +405,7 @@ function renderCrew(own: OwnShipView | null): void {
     el,
     `<div class="panel-title">Команда ${own.crew.length + away}/${own.crewCap}${away ? ` (на планете: ${away})` : ''}</div>
      <table><tr><th>Имя</th><th>❤</th><th>🍞</th><th>☾</th><th>Занятие</th><th>И/Б/П/Б</th><th></th></tr>${rows}</table>
-     <div class="hint">Цифры под именем — приоритет работы: 1 раньше всего, 4 позже, 0 запрещает. 🚀 — отметить для высадки.</div>`,
+     <div class="hint">Цифры под именем — приоритет работы: 1 раньше всего, 4 позже, 0 запрещает. «Вести» — пешка ждёт приказа, ПКМ по полу отправит её в клетку. 🚀 — отметить для высадки.</div>`,
   );
 }
 
@@ -424,6 +433,8 @@ function renderContext(own: OwnShipView | null): void {
   const snap = store.snap!;
   const parts: string[] = [];
   if (own) {
+    const pawn = store.selectedCrew !== null ? own.crew.find((c) => c.id === store.selectedCrew) : undefined;
+    if (pawn) parts.push(pawnCard(pawn));
     const sel = store.selectedId !== null ? snap.contacts.find((c) => c.id === store.selectedId) : undefined;
     if (sel) parts.push(selectionPanel(own, sel));
     if (own.marketId !== null && snap.market) parts.push(marketPanel(own));
@@ -445,6 +456,27 @@ function renderContext(own: OwnShipView | null): void {
     el.classList.remove('hidden');
     setHtml(el, parts.join(''));
   } else el.classList.add('hidden');
+}
+
+function pawnCard(c: OwnShipView['crew'][number]): string {
+  const s = c.skills;
+  const carry = c.carry ? `${RES_ICON[c.carry.resource]} ${c.carry.amount}` : 'руки пусты';
+  const going = c.order ? `идёт в клетку ${c.order.x},${c.order.y}` : 'приказа идти нет';
+  return `<div class="card">
+    <div class="panel-title">${c.robot ? '🤖 ' : ''}${esc(c.name)} ${c.draft ? '<span class="ok">ведёт</span>' : ''}</div>
+    <div>Здоровье ${bar(c.health, c.health < 35 ? '#ff5252' : '#69f0ae')} ${Math.round(c.health)}</div>
+    <div>Сытость ${c.robot ? '—' : `${bar(c.food, '#ffb74d')} ${Math.round(c.food)}`}</div>
+    <div>Бодрость ${c.robot ? '—' : `${bar(c.rest, '#64b5f6')} ${Math.round(c.rest)}`}</div>
+    <div class="muted">${c.draft ? 'ждёт приказа' : STATE_NAMES[c.state]}${c.job ? ` · ${JOB_NAMES[c.job]}` : ''} · ${going}</div>
+    <div class="muted">В руках: ${carry}</div>
+    <div class="skills">Инженерия ${s.engineering} · Ботаника ${s.botany} · Пилот ${s.piloting} · Бой ${s.combat}</div>
+    <div class="sub">
+      <button data-act="draft" data-id="${c.id}" class="${c.draft ? 'on' : ''}">${c.draft ? 'Отпустить' : 'Вести'}</button>
+      <button data-act="clearorder" data-id="${c.id}">Снять приказ</button>
+      ${c.robot ? '' : `<button data-act="cryo" data-id="${c.id}">${c.state === 'cryo' ? 'Разбудить' : 'Криосон'}</button>`}
+    </div>
+    <div class="hint">ПКМ по полу — идти в эту клетку. «Вести» снимает пешку с работ, пока не отпустите.</div>
+  </div>`;
 }
 
 function selectionPanel(own: OwnShipView, c: Contact): string {

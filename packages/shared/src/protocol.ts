@@ -2,7 +2,7 @@
 import type { Biome, BuildKind, HullClass, ModuleType, NpcType, Physical, Resource, Resources } from './defs';
 import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry, WorkPriority } from './state';
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 export type Command =
   | { c: 'move'; x: number; y: number }
@@ -16,6 +16,9 @@ export type Command =
   | { c: 'toggle'; moduleId: number }
   | { c: 'cryo'; crewId: number }
   | { c: 'setPriority'; crewId: number; kind: JobKind; value: WorkPriority }
+  | { c: 'order'; crewId: number; x: number; y: number }
+  | { c: 'draft'; crewId: number; on: boolean }
+  | { c: 'clearOrder'; crewId: number }
   | { c: 'expedition'; planetId: number; crewIds: number[] }
   | { c: 'recall'; expeditionId: number }
   | { c: 'trade'; resource: Resource; amount: number }
@@ -54,6 +57,10 @@ export interface CrewView {
   priorities: Record<JobKind, WorkPriority>;
   /** Что несёт в руках, иначе null. */
   carry: { resource: Physical; amount: number } | null;
+  /** Прямое управление: сама работу не берёт. */
+  draft: boolean;
+  /** Куда игрок отправил пешку, иначе null. */
+  order: { x: number; y: number } | null;
 }
 
 export interface ModuleView {

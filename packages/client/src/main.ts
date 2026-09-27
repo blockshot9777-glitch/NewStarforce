@@ -1,9 +1,10 @@
 import './style.css';
 import { isModuleType, moduleSize, validateBuild, type BuildKind, type Ship } from '@starforce/shared';
 import { connect, savedName, send } from './net';
+import { loadKenney } from './render/kenney';
 import { loadSprites } from './render/modules';
 import { drawMinimap, drawSpace, type SpaceRenderResult } from './render/space';
-import { interp, screenToWorld, store, worldToTile } from './store';
+import { interp, screenToWorld, store, toast, worldToTile } from './store';
 import { initUi, kindName, renderUi, setMode } from './ui';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -155,8 +156,18 @@ function onMouseDown(e: MouseEvent): void {
   if (e.button === 2) {
     if (store.tool) store.tool = null;
     else {
-      store.selectedId = null;
-      store.selectedCrew = null;
+      const tile = tileInOwnShip();
+      const own = store.snap?.ship;
+      const layout = own ? store.layouts.get(own.id) : undefined;
+      const kind = tile && layout ? layout.grid.tiles[tile.y * layout.w + tile.x] : undefined;
+      if (store.selectedCrew !== null && tile && (kind === 'floor' || kind === 'door')) {
+        send({ c: 'order', crewId: store.selectedCrew, x: tile.x, y: tile.y });
+      } else if (store.selectedCrew !== null && tile && kind && kind !== 'empty') {
+        toast('Сюда не пройти');
+      } else {
+        store.selectedId = null;
+        store.selectedCrew = null;
+      }
     }
     renderUi(true);
     return;
@@ -322,6 +333,7 @@ canvas.addEventListener('wheel', onWheel, { passive: false });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('keydown', onKey);
 loadSprites();
+loadKenney();
 initUi();
 start();
 requestAnimationFrame(frame);

@@ -301,10 +301,16 @@ describe('мир', () => {
     const w = World.create(3);
     w.join('A', 'tok');
     const raw = JSON.parse(w.toJSON()) as { ships: { crew: { priorities?: unknown }[] }[] };
-    for (const c of raw.ships[0].crew) delete c.priorities;
+    for (const c of raw.ships[0].crew) {
+      delete c.priorities;
+      delete (c as { draft?: boolean }).draft;
+      delete (c as { order?: unknown }).order;
+    }
     const loaded = World.fromJSON(JSON.stringify(raw));
     const crew = loaded.state.ships[0].crew[0];
     expect(crew.priorities).toEqual({ extinguish: 1, pilot: 2, repair: 3, haul: 3, harvest: 4, build: 4, cryo: 1 });
+    expect(crew.draft).toBe(false);
+    expect(crew.order).toBeNull();
   });
 
   it('старое сохранение без стопок переносит запас на склад', () => {
@@ -335,9 +341,43 @@ describe('мир', () => {
     expect(w.command(p.id, { c: 'stockpile', x: -1, y: 0, on: true })).toMatch(/корпуса/);
   });
 
+  it('приказ ведёт пешку в клетку, а «вести» не даёт ей брать работу', () => {
+    const { w, p, ship } = newWorld();
+    pacify(w);
+    const c = ship.crew[0];
+    let spot: { x: number; y: number } | null = null;
+    for (let y = 0; y < ship.h; y++) {
+      for (let x = 0; x < ship.w; x++) {
+        const tile = ship.tiles[y * ship.w + x];
+        if ((tile === 'floor' || tile === 'door') && Math.abs(x - c.x) + Math.abs(y - c.y) > 4) spot = { x, y };
+      }
+    }
+    expect(spot).not.toBeNull();
+    expect(w.command(p.id, { c: 'order', crewId: c.id, x: spot!.x, y: spot!.y })).toBeNull();
+    expect(c.order).toEqual(spot);
+    expect(c.job).toBeNull();
+    expect(stepUntil(w, () => c.order === null && Math.round(c.x) === spot!.x && Math.round(c.y) === spot!.y, 20)).toBe(true);
+    const view = w.snapshotFor(p.id, newClientCache());
+    expect(view.t).toBe('snap');
+    if (view.t === 'snap') expect(view.ship!.crew.find((o) => o.id === c.id)?.order).toBeNull();
+
+    expect(w.command(p.id, { c: 'draft', crewId: c.id, on: true })).toBeNull();
+    const stand = { x: c.x, y: c.y };
+    stepSeconds(w, 4);
+    expect(c.draft).toBe(true);
+    expect(c.job).toBeNull();
+    expect(c.x).toBe(stand.x);
+    expect(c.y).toBe(stand.y);
+    expect(w.command(p.id, { c: 'order', crewId: c.id, x: -1, y: 0 })).toMatch(/пройти/);
+    expect(w.command(p.id, { c: 'order', crewId: c.id, x: Math.round(c.x), y: Math.round(c.y) })).toBeNull();
+    expect(c.order).toBeNull();
+    expect(w.command(p.id, { c: 'draft', crewId: c.id, on: false })).toBeNull();
+    expect(c.draft).toBe(false);
+  });
+
   it('мусорные команды не роняют сервер', () => {
     const { w, p } = newWorld();
-    const junk: unknown[] = [null, 5, 'x', {}, { c: 1 }, { c: 'move', x: 'a' }, { c: 'build', x: 1.5, y: 2, kind: 'floor' }, { c: 'build', x: 1, y: 1, kind: '__proto__' }, { c: 'target', id: {} }, { c: 'jump', systemId: 99 }, { c: 'nope' }, { c: 'setPriority', crewId: 1.5, kind: 'build', value: 1 }, { c: 'setPriority', crewId: 1, kind: 5, value: 1 }, { c: 'stockpile', x: 1.5, y: 0, on: true }];
+    const junk: unknown[] = [null, 5, 'x', {}, { c: 1 }, { c: 'move', x: 'a' }, { c: 'build', x: 1.5, y: 2, kind: 'floor' }, { c: 'build', x: 1, y: 1, kind: '__proto__' }, { c: 'target', id: {} }, { c: 'jump', systemId: 99 }, { c: 'nope' }, { c: 'setPriority', crewId: 1.5, kind: 'build', value: 1 }, { c: 'setPriority', crewId: 1, kind: 5, value: 1 }, { c: 'stockpile', x: 1.5, y: 0, on: true }, { c: 'order', crewId: 1.5, x: 0, y: 0 }, { c: 'draft', crewId: 1, on: 1 }, { c: 'clearOrder', crewId: null }];
     for (const j of junk) expect(typeof w.command(p.id, j)).toBe('string');
     stepSeconds(w, 1);
   });

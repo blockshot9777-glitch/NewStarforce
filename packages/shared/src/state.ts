@@ -96,6 +96,10 @@ export interface Crew {
   job: Job | null;
   /** Что несёт в руках. Пока не положит — в складе этого нет. */
   carry: { resource: Physical; amount: number } | null;
+  /** Прямое управление: пешка стоит и ждёт приказа, сама работу не берёт. */
+  draft: boolean;
+  /** Клетка, куда игрок отправил пешку. Пусто — приказа идти нет. */
+  order: { x: number; y: number } | null;
   timer: number;
 }
 

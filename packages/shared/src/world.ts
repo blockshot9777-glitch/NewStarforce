@@ -49,7 +49,7 @@ import {
   type Resources,
   type WeaponDef,
 } from './defs';
-import { isPiloted, normalizePriorities, orderCryo, placeCrewOnBoard, setPriority, toggleUrgent, updateCrew } from './crew';
+import { clearOrder, isPiloted, normalizePriorities, orderCryo, orderMove, placeCrewOnBoard, setDraft, setPriority, toggleUrgent, updateCrew } from './crew';
 import { dropCarry, giveShip, materialsReady, normalizeStorage, putInStockpile, removeStored, syncStored, takeShip } from './items';
 import type { Command, Contact, LayoutView, OwnShipView, Snapshot } from './protocol';
 import { Rng } from './rng';
@@ -1062,6 +1062,15 @@ export class World {
       case 'setPriority':
         if (!isInt(cmd.crewId) || typeof cmd.kind !== 'string' || !isInt(cmd.value)) return 'Некорректный приоритет';
         return setPriority(ship, cmd.crewId, cmd.kind, cmd.value, this.nextId);
+      case 'order':
+        if (!isInt(cmd.crewId) || !isInt(cmd.x) || !isInt(cmd.y)) return 'Некорректный приказ';
+        return orderMove(ship, cmd.crewId, cmd.x, cmd.y, this.nextId);
+      case 'draft':
+        if (!isInt(cmd.crewId) || typeof cmd.on !== 'boolean') return 'Некорректный приказ';
+        return setDraft(ship, cmd.crewId, cmd.on, this.nextId);
+      case 'clearOrder':
+        if (!isInt(cmd.crewId)) return 'Некорректный приказ';
+        return clearOrder(ship, cmd.crewId);
       case 'expedition':
         return this.startExpedition(player, ship, cmd.planetId, cmd.crewIds);
       case 'recall': {
@@ -1150,6 +1159,8 @@ export class World {
       dropCarry(ship, c, this.nextId);
       c.job = null;
       c.path = [];
+      c.order = null;
+      c.draft = false;
       c.state = 'idle';
     }
     ship.crew = ship.crew.filter((c) => !crew.includes(c));
@@ -1279,6 +1290,8 @@ export class World {
         skills: c.skills,
         priorities: { ...c.priorities },
         carry: c.carry ? { resource: c.carry.resource, amount: Math.round(c.carry.amount * 100) / 100 } : null,
+        draft: c.draft,
+        order: c.order ? { x: c.order.x, y: c.order.y } : null,
       })),
       fires: Object.entries(ship.fires).map(([t, v]) => [Number(t), r2(v)]),
       urgent: [...ship.urgent],
