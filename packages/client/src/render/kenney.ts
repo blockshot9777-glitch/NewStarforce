@@ -1,25 +1,27 @@
-// Спрайты Kenney (CC0): листы 16×16 с полем 1 пиксель. Если лист ещё не загрузился — рисуем по-старому.
+// Интерьер корабля — лист Buch «Sci-fi Interior» (CC0), 32×32 без полей.
+// Экипаж — скафандры из Kenney Sci-fi RTS (CC0). Если лист не загрузился, клетка рисуется по-старому.
 import type { ModuleType, Physical } from '@starforce/shared';
 
-const STRIDE = 17;
-const TILE = 16;
+type SheetName = 'tiles' | 'chars';
 
-type SheetName = 'tiles' | 'chars' | 'indoor';
+const SPEC: Record<SheetName, { stride: number; tile: number; url: string }> = {
+  tiles: { stride: 32, tile: 32, url: 'sprites/kenney/interior.png' },
+  chars: { stride: 48, tile: 48, url: 'sprites/kenney/crew.png' },
+};
 
-const sheets: Record<SheetName, HTMLImageElement | null> = { tiles: null, chars: null, indoor: null };
+const sheets: Record<SheetName, HTMLImageElement | null> = { tiles: null, chars: null };
 
-function load(name: SheetName, url: string): void {
+function load(name: SheetName): void {
   const img = new Image();
   img.onload = () => {
     sheets[name] = img;
   };
-  img.src = url;
+  img.src = SPEC[name].url;
 }
 
 export function loadKenney(): void {
-  load('tiles', 'sprites/kenney/tiles.png');
-  load('chars', 'sprites/kenney/chars.png');
-  load('indoor', 'sprites/kenney/indoor.png');
+  load('tiles');
+  load('chars');
 }
 
 export function drawCell(
@@ -32,88 +34,67 @@ export function drawCell(
   size: number,
 ): boolean {
   const img = sheets[sheet];
+  const spec = SPEC[sheet];
   if (!img || !img.complete || img.naturalWidth === 0) return false;
   const prev = ctx.imageSmoothingEnabled;
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(img, col * STRIDE, row * STRIDE, TILE, TILE, x, y, size, size);
+  ctx.drawImage(img, col * spec.stride, row * spec.stride, spec.tile, spec.tile, x, y, size, size);
   ctx.imageSmoothingEnabled = prev;
   return true;
 }
 
-/** Каменные полы — палуба. Клетка выбирается по координате, чтобы палуба не была одним штампом. */
+/** Светлые плиты палубы. Клетка выбирается по координате, чтобы пол не был одним штампом. */
 const FLOORS: readonly (readonly [number, number])[] = [
-  [7, 0],
-  [8, 0],
-  [9, 0],
-  [7, 1],
-  [8, 1],
+  [6, 1],
+  [7, 2],
+  [8, 4],
+  [9, 5],
+  [10, 2],
+  [11, 5],
 ];
 
 export function floorCell(x: number, y: number): readonly [number, number] {
   return FLOORS[Math.abs((x * 17 + y * 31) | 0) % FLOORS.length];
 }
 
-export const WALL_CELL: readonly [number, number] = [7, 2];
-export const DOOR_CELL: readonly [number, number] = [32, 2];
+/** Переборка: сине-оранжевая полоса, не камень. */
+export const WALL_CELL: readonly [number, number] = [4, 0];
+/** Люк в палубе. */
+export const DOOR_CELL: readonly [number, number] = [2, 5];
 
-const MODULE_ART: Record<ModuleType, { sheet: SheetName; c: number; r: number }> = {
-  bridge: { sheet: 'indoor', c: 4, r: 5 },
-  reactor: { sheet: 'tiles', c: 14, r: 0 },
-  battery: { sheet: 'tiles', c: 29, r: 2 },
-  engine: { sheet: 'tiles', c: 31, r: 0 },
-  o2gen: { sheet: 'tiles', c: 23, r: 0 },
-  water_recycler: { sheet: 'tiles', c: 18, r: 1 },
-  hydroponics: { sheet: 'tiles', c: 13, r: 10 },
-  bed: { sheet: 'tiles', c: 14, r: 1 },
-  medbay: { sheet: 'tiles', c: 13, r: 2 },
-  shield_gen: { sheet: 'tiles', c: 45, r: 1 },
-  laser: { sheet: 'tiles', c: 46, r: 1 },
-  missile: { sheet: 'tiles', c: 20, r: 2 },
-  radar: { sheet: 'tiles', c: 44, r: 1 },
-  mining_laser: { sheet: 'tiles', c: 15, r: 0 },
-  lamp: { sheet: 'tiles', c: 16, r: 8 },
-  solar_panel: { sheet: 'tiles', c: 10, r: 8 },
-  cryopod: { sheet: 'tiles', c: 33, r: 2 },
-  vent: { sheet: 'tiles', c: 33, r: 3 },
+const MODULE_ART: Record<ModuleType, { c: number; r: number }> = {
+  bridge: { c: 0, r: 3 },
+  reactor: { c: 4, r: 3 },
+  battery: { c: 1, r: 3 },
+  engine: { c: 2, r: 4 },
+  o2gen: { c: 1, r: 3 },
+  water_recycler: { c: 6, r: 4 },
+  hydroponics: { c: 0, r: 3 },
+  bed: { c: 1, r: 4 },
+  medbay: { c: 1, r: 4 },
+  shield_gen: { c: 3, r: 0 },
+  laser: { c: 2, r: 0 },
+  missile: { c: 2, r: 4 },
+  radar: { c: 3, r: 0 },
+  mining_laser: { c: 0, r: 3 },
+  lamp: { c: 2, r: 5 },
+  solar_panel: { c: 5, r: 0 },
+  cryopod: { c: 2, r: 0 },
+  vent: { c: 6, r: 4 },
 };
 
 export function drawModuleArt(ctx: CanvasRenderingContext2D, type: ModuleType, x: number, y: number, size: number): boolean {
   const a = MODULE_ART[type];
-  return drawCell(ctx, a.sheet, a.c, a.r, x, y, size);
+  return drawCell(ctx, 'tiles', a.c, a.r, x, y, size);
 }
 
-const STACK_ART: Record<Physical, readonly [number, number]> = {
-  metal: [22, 0],
-  ice: [11, 9],
-  water: [24, 0],
-  crystals: [45, 1],
-  biomass: [19, 10],
-  food: [25, 0],
-};
-
-export function drawStackArt(ctx: CanvasRenderingContext2D, resource: Physical, x: number, y: number, size: number): boolean {
-  const [c, r] = STACK_ART[resource];
-  return drawCell(ctx, 'tiles', c, r, x, y, size);
+/** Груз — ящик. Цвет ресурса дорисовывает вызывающий код. */
+export function drawStackArt(ctx: CanvasRenderingContext2D, _resource: Physical, x: number, y: number, size: number): boolean {
+  return drawCell(ctx, 'tiles', 2, 4, x, y, size);
 }
 
-/** Тело, одежда и волосы (или шлем у робота) с одного листа персонажей. */
+/** Скафандр. Робот берёт серый шлем из конца ленты. */
 export function drawPawn(ctx: CanvasRenderingContext2D, id: number, robot: boolean, x: number, y: number, size: number): boolean {
-  if (!sheets.chars?.complete || sheets.chars.naturalWidth === 0) return false;
-  const bodyCol = Math.abs(id) % 3;
-  const bodyRow = robot ? 0 : Math.abs(id) % 3;
-  const layers: readonly (readonly [number, number])[] = robot
-    ? [
-        [bodyCol, bodyRow],
-        [6 + (Math.abs(id) % 10), 0],
-        [28 + (Math.abs(id) % 4), 0],
-      ]
-    : [
-        [bodyCol, bodyRow],
-        [6 + (Math.abs(id) % 10), Math.abs(id) % 3],
-        [20 + (Math.abs(id) % 8), Math.abs(id) % 5],
-      ];
-  const dx = x - size / 2;
-  const dy = y - size / 2;
-  for (const [c, r] of layers) drawCell(ctx, 'chars', c, r, dx, dy, size);
-  return true;
+  const col = robot ? 6 + (Math.abs(id) % 2) : Math.abs(id) % 6;
+  return drawCell(ctx, 'chars', col, 0, x - size / 2, y - size / 2, size);
 }

@@ -255,14 +255,7 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
     const p = at(x, y);
     const open = crewTiles.has(`${x},${y}`);
     const vertical = tileAt(x, y - 1) === 'wall' || tileAt(x, y + 1) === 'wall';
-    if (!open) {
-      ctx.save();
-      ctx.translate(p.x + ts / 2, p.y + ts / 2);
-      if (!vertical) ctx.rotate(Math.PI / 2);
-      const drawn = drawCell(ctx, 'tiles', DOOR_CELL[0], DOOR_CELL[1], -ts / 2, -ts / 2, ts);
-      ctx.restore();
-      if (drawn) return;
-    }
+    if (!open && drawCell(ctx, 'tiles', DOOR_CELL[0], DOOR_CELL[1], p.x, p.y, ts)) return;
     ctx.fillStyle = '#3a3f47';
     ctx.fillRect(p.x, p.y, ts, ts);
     ctx.fillStyle = '#ffb300';
@@ -327,6 +320,8 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
     const p = at(s.x, s.y);
     const icon = ts * 0.62;
     if (drawStackArt(ctx, s.resource, p.x + (ts - icon) / 2, p.y + ts * 0.28, icon)) {
+      ctx.fillStyle = STACK_COLOR[s.resource] ?? '#fff';
+      ctx.fillRect(p.x + ts * 0.28, p.y + ts * 0.78, ts * 0.44, Math.max(2, ts * 0.08));
       if (ts >= 18) {
         ctx.fillStyle = '#eceff1';
         ctx.font = `${Math.max(8, ts * 0.22)}px system-ui`;

@@ -1,10 +1,7 @@
 # Спрайты
 
-Интерьер, модули, грузы и пешки рисуются с листов Kenney (CC0, kenney.nl):
-
-- `kenney/tiles.png` — полы, стены, двери, мебель, грузы
-- `kenney/chars.png` — тела, одежда и волосы пешек
-- `kenney/indoor.png` — мостик
+Интерьер корабля — лист Buch, Sci-fi Interior (CC0): `kenney/interior.png`, клетки 32×32.
+Экипаж — скафандры Kenney, Sci-fi RTS (CC0): `kenney/crew.png`.
 
 Если лист не загрузился, клетка рисуется процедурно.
 
