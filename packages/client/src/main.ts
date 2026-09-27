@@ -1,5 +1,5 @@
 import './style.css';
-import { isModuleType, validateBuild, type BuildKind, type Ship } from '@starforce/shared';
+import { isModuleType, moduleSize, validateBuild, type BuildKind, type Ship } from '@starforce/shared';
 import { connect, savedName, send } from './net';
 import { loadSprites } from './render/modules';
 import { drawMinimap, drawSpace, type SpaceRenderResult } from './render/space';
@@ -40,7 +40,13 @@ function toolCells(): { x: number; y: number }[] {
   const h = store.hoverTile;
   if (!h) return [];
   const tool = store.tool;
-  if (!store.dragStart || !tool || isModuleType(tool) || tool === 'urgent') return [h];
+  if (tool && isModuleType(tool)) {
+    const [w, hh] = moduleSize(tool);
+    const cells: { x: number; y: number }[] = [];
+    for (let dy = 0; dy < hh; dy++) for (let dx = 0; dx < w; dx++) cells.push({ x: h.x + dx, y: h.y + dy });
+    return cells;
+  }
+  if (!store.dragStart || !tool || tool === 'urgent') return [h];
   const x0 = Math.min(store.dragStart.x, h.x);
   const x1 = Math.max(store.dragStart.x, h.x);
   const y0 = Math.min(store.dragStart.y, h.y);
@@ -59,6 +65,11 @@ function toolCells(): { x: number; y: number }[] {
 function applyTool(): void {
   const tool = store.tool;
   if (!tool) return;
+  if (isModuleType(tool)) {
+    const h = store.hoverTile;
+    if (h) send({ c: 'build', x: h.x, y: h.y, kind: tool });
+    return;
+  }
   const cells = toolCells();
   for (const c of cells) {
     if (tool === 'remove') send({ c: 'remove', x: c.x, y: c.y });
@@ -74,9 +85,12 @@ function drawToolPreview(): void {
   const ship = pseudoShip();
   const cells = toolCells();
   const zone = store.tool === 'stockpile' || store.tool === 'unstockpile';
+  const anchor = store.hoverTile;
+  const moduleOk = !!(ship && anchor && store.tool && isModuleType(store.tool) && !validateBuild(ship, anchor.x, anchor.y, store.tool));
   for (const c of cells) {
     let ok = true;
-    if (ship && !zone && store.tool !== 'remove' && store.tool !== 'urgent') {
+    if (store.tool && isModuleType(store.tool)) ok = moduleOk;
+    else if (ship && !zone && store.tool !== 'remove' && store.tool !== 'urgent') {
       ok = !validateBuild(ship, c.x, c.y, store.tool as BuildKind);
     }
     const x = i.ox + c.x * i.ts;

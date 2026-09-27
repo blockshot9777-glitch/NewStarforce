@@ -29,6 +29,7 @@ import {
   buildCost,
   buildWork,
   isModuleType,
+  moduleSize,
   type BuildKind,
   type HullClass,
   type ModuleType,
@@ -273,16 +274,35 @@ export function isOuterWall(ship: Ship, x: number, y: number): boolean {
 export function isLit(ship: Ship, x: number, y: number): boolean {
   return ship.modules.some((m) => {
     const light = MODULES[m.type].light;
-    return !!light && m.powered && functional(m) && Math.hypot(m.x - x, m.y - y) <= light;
+    if (!light || !m.powered || !functional(m)) return false;
+    const [w, h] = moduleSize(m.type);
+    const cx = m.x + (w - 1) / 2;
+    const cy = m.y + (h - 1) / 2;
+    return Math.hypot(cx - x, cy - y) <= light;
   });
 }
 
 export function moduleAt(ship: Ship, x: number, y: number): ShipModule | undefined {
-  return ship.modules.find((m) => m.x === x && m.y === y);
+  return ship.modules.find((m) => {
+    const [w, h] = moduleSize(m.type);
+    return x >= m.x && y >= m.y && x < m.x + w && y < m.y + h;
+  });
 }
 
 export function blueprintAt(ship: Ship, x: number, y: number) {
-  return ship.blueprints.find((b) => b.x === x && b.y === y);
+  return ship.blueprints.find((b) => {
+    if (b.remove || !isModuleType(b.kind)) return b.x === x && b.y === y;
+    const [w, h] = moduleSize(b.kind);
+    return x >= b.x && y >= b.y && x < b.x + w && y < b.y + h;
+  });
+}
+
+function footprint(kind: BuildKind, x: number, y: number): Vec[] {
+  if (!isModuleType(kind)) return [{ x, y }];
+  const [w, h] = moduleSize(kind);
+  const cells: Vec[] = [];
+  for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) cells.push({ x: x + dx, y: y + dy });
+  return cells;
 }
 
 export function walkableTiles(ship: Ship): Vec[] {
@@ -506,11 +526,15 @@ export function validateBuild(ship: Ship, x: number, y: number, kind: BuildKind)
   const tile = tileAt(ship, x, y);
   const hasNeighbor = neighbors4(x, y).some((p) => tileAt(ship, p.x, p.y) !== 'empty');
   if (isModuleType(kind)) {
-    if (tile !== 'floor') return 'Модуль ставится только на пол';
-    if (moduleAt(ship, x, y)) return 'Клетка занята модулем';
-    if (MODULES[kind].hullMount && !neighbors4(x, y).some((n) => isOuterWall(ship, n.x, n.y))) {
-      return 'Ставится вплотную к внешней стене корпуса';
+    const cells = footprint(kind, x, y);
+    for (const c of cells) {
+      if (!inBounds(ship, c.x, c.y)) return 'Вне корпуса';
+      if (blueprintAt(ship, c.x, c.y)) return 'Здесь уже есть чертёж';
+      if (tileAt(ship, c.x, c.y) !== 'floor') return 'Модуль ставится только на пол';
+      if (moduleAt(ship, c.x, c.y)) return 'Клетка занята модулем';
     }
+    const byHull = cells.some((c) => neighbors4(c.x, c.y).some((n) => isOuterWall(ship, n.x, n.y)));
+    if (MODULES[kind].hullMount && !byHull) return 'Ставится вплотную к внешней стене корпуса';
   } else if (kind === 'floor') {
     if (tile !== 'empty') return 'Здесь уже что-то есть';
     if (!hasNeighbor) return 'Пол должен примыкать к кораблю';
@@ -576,7 +600,9 @@ export function completeBlueprint(ship: Ship, bpId: number, ctx: ShipContext): v
       }
     }
   } else if (isModuleType(bp.kind)) {
-    if (ship.tiles[idx] === 'floor' && !moduleAt(ship, bp.x, bp.y)) {
+    const cells = footprint(bp.kind, bp.x, bp.y);
+    const clear = cells.every((c) => inBounds(ship, c.x, c.y) && tileAt(ship, c.x, c.y) === 'floor' && !moduleAt(ship, c.x, c.y));
+    if (clear) {
       ship.modules.push(makeModule(ctx.nextId(), bp.kind, bp.x, bp.y));
       ctx.log(`Построен модуль: ${MODULES[bp.kind].name}`, 'good');
     } else if (!bp.free) {

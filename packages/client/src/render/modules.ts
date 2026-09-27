@@ -23,42 +23,57 @@ export interface ModuleLook {
 export function drawModule(ctx: CanvasRenderingContext2D, type: ModuleType, x: number, y: number, s: number, look: ModuleLook, t: number): void {
   const sprite = sprites.get(type);
   const def = MODULES[type];
+  const [mw, mh] = def.size ?? [1, 1];
+  const w = s * mw;
+  const h = s * mh;
   ctx.save();
   ctx.translate(x, y);
+  if (mw > 1 || mh > 1) {
+    ctx.fillStyle = def.color;
+    ctx.globalAlpha = 0.28;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = def.color;
+    ctx.lineWidth = Math.max(1, s * 0.06);
+    ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+  }
+  ctx.save();
+  ctx.translate((w - s) / 2, (h - s) / 2);
   if (sprite) {
     ctx.drawImage(sprite, 0, 0, s, s);
   } else {
     drawProcedural(ctx, type, s, look, t, def.color);
   }
+  ctx.restore();
   if (!look.powered && def.demand > 0 && look.enabled) {
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(0, 0, s, s);
-    bolt(ctx, s * 0.5, s * 0.5, s * 0.35, '#ff5252');
+    ctx.fillRect(0, 0, w, h);
+    bolt(ctx, w * 0.5, h * 0.5, s * 0.35, '#ff5252');
   }
   if (!look.enabled) {
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(0, 0, s, s);
+    ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = '#ffab40';
     ctx.lineWidth = Math.max(1, s * 0.06);
     ctx.beginPath();
-    ctx.arc(s / 2, s / 2, s * 0.22, -Math.PI * 0.3, Math.PI * 1.3);
-    ctx.moveTo(s / 2, s * 0.22);
-    ctx.lineTo(s / 2, s * 0.5);
+    ctx.arc(w / 2, h / 2, s * 0.22, -Math.PI * 0.3, Math.PI * 1.3);
+    ctx.moveTo(w / 2, h / 2 - s * 0.28);
+    ctx.lineTo(w / 2, h / 2);
     ctx.stroke();
   }
   if (look.hpFrac < 0.999) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(s * 0.1, s * 0.86, s * 0.8, s * 0.08);
+    ctx.fillRect(w * 0.1, h - s * 0.16, w * 0.8, s * 0.08);
     ctx.fillStyle = look.hpFrac <= 0 ? '#555' : look.hpFrac < 0.4 ? '#ff5252' : '#ffd740';
-    ctx.fillRect(s * 0.1, s * 0.86, s * 0.8 * Math.max(0, look.hpFrac), s * 0.08);
+    ctx.fillRect(w * 0.1, h - s * 0.16, w * 0.8 * Math.max(0, look.hpFrac), s * 0.08);
     if (look.hpFrac <= 0) {
       ctx.strokeStyle = '#ff1744';
       ctx.lineWidth = Math.max(1, s * 0.07);
       ctx.beginPath();
-      ctx.moveTo(s * 0.2, s * 0.2);
-      ctx.lineTo(s * 0.8, s * 0.8);
-      ctx.moveTo(s * 0.8, s * 0.2);
-      ctx.lineTo(s * 0.2, s * 0.8);
+      ctx.moveTo(w * 0.2, h * 0.2);
+      ctx.lineTo(w * 0.8, h * 0.8);
+      ctx.moveTo(w * 0.8, h * 0.2);
+      ctx.lineTo(w * 0.2, h * 0.8);
       ctx.stroke();
     }
   }

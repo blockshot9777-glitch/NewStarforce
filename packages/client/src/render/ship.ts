@@ -1,5 +1,5 @@
 // Корпус и интерьер корабля: пол, стены, двери, модули, экипаж, пожары, свет и воздух по комнатам.
-import { MODULES, TILE_WORLD, isModuleType, type ModuleType, type OwnShipView } from '@starforce/shared';
+import { MODULES, TILE_WORLD, isModuleType, moduleSize, type ModuleType, type OwnShipView } from '@starforce/shared';
 import { store, type ParsedLayout } from '../store';
 import { drawModule, roundRect } from './modules';
 
@@ -260,6 +260,9 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
   // Чертежи.
   for (const b of ship.blueprints) {
     const p = at(b.x, b.y);
+    const [bw, bh] = isModuleType(b.kind) ? moduleSize(b.kind) : [1, 1];
+    const pw = ts * bw;
+    const ph = ts * bh;
     if (b.remove) {
       ctx.strokeStyle = '#ff5252';
       ctx.lineWidth = Math.max(1, ts * 0.08);
@@ -280,11 +283,11 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
       ctx.strokeStyle = '#40c4ff';
       ctx.setLineDash([ts * 0.15, ts * 0.1]);
       ctx.lineWidth = Math.max(1, ts * 0.05);
-      ctx.strokeRect(p.x + 1, p.y + 1, ts - 2, ts - 2);
+      ctx.strokeRect(p.x + 1, p.y + 1, pw - 2, ph - 2);
       ctx.setLineDash([]);
     }
     ctx.fillStyle = '#40c4ff';
-    ctx.fillRect(p.x + ts * 0.1, p.y + ts * 0.9, ts * 0.8 * b.progress, Math.max(2, ts * 0.06));
+    ctx.fillRect(p.x + pw * 0.1, p.y + ph - Math.max(2, ts * 0.1), (pw * 0.8) * b.progress, Math.max(2, ts * 0.06));
   }
 
   const STACK_COLOR: Record<string, string> = {

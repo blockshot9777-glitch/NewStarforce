@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   MODULES,
   Rng,
+  blueprintAt,
   buildCost,
+  completeBlueprint,
+  moduleAt,
+  moduleSize,
   setStored,
   airAt,
   availableJobs,
@@ -196,6 +200,27 @@ describe('строительство', () => {
     expect(ship.modules.some((m) => m.type === 'lamp' && m.x === 7 && m.y === 3)).toBe(true);
     const m = ship.modules[0];
     expect(validateBuild(ship, m.x, m.y, 'lamp')).toMatch(/занята/);
+  });
+
+  it('медотсек занимает 2×2, панель — 2×1 у стены', () => {
+    const { ship, ctx } = setup();
+    expect(moduleSize('lamp')).toEqual([1, 1]);
+    expect(moduleSize('medbay')).toEqual([2, 2]);
+    expect(moduleSize('solar_panel')).toEqual([2, 1]);
+    expect(validateBuild(ship, 7, 3, 'solar_panel')).toMatch(/внешней стене/);
+    expect(validateBuild(ship, 11, 6, 'solar_panel')).toBeNull();
+    expect(validateBuild(ship, 13, 6, 'solar_panel')).toMatch(/пол/);
+    expect(validateBuild(ship, 11, 5, 'medbay')).toBeNull();
+    expect(placeBlueprint(ship, 5000, 11, 5, 'medbay')).toBeNull();
+    expect(blueprintAt(ship, 12, 6)?.id).toBe(5000);
+    expect(validateBuild(ship, 12, 5, 'lamp')).toMatch(/чертёж/);
+    ship.blueprints[0].delivered = { ...buildCost('medbay') };
+    completeBlueprint(ship, 5000, ctx);
+    const bay = moduleAt(ship, 11, 5);
+    expect(bay?.type).toBe('medbay');
+    expect(moduleAt(ship, 12, 6)).toBe(bay);
+    expect(moduleAt(ship, 13, 6)).toBeUndefined();
+    expect(validateBuild(ship, 12, 6, 'lamp')).toMatch(/занята/);
   });
 });
 

@@ -145,6 +145,8 @@ export interface ModuleDef {
   hullMount?: boolean;
   /** Радиус света в клетках, если модуль освещает отсек. */
   light?: number;
+  /** Прямоугольник клеток. Левый верх — точка постановки. Нет поля — одна клетка. */
+  size?: readonly [number, number];
   glyph: string;
   color: string;
 }
@@ -254,7 +256,8 @@ export const MODULES: Record<ModuleType, ModuleDef> = {
   },
   medbay: {
     name: 'Медотсек',
-    desc: 'Лечит членов экипажа.',
+    desc: 'Лечит членов экипажа. Занимает 2×2 клетки.',
+    size: [2, 2],
     cost: { metal: 30, crystals: 6, biomass: 5 },
     work: 10,
     maxHp: 50,
@@ -344,7 +347,8 @@ export const MODULES: Record<ModuleType, ModuleDef> = {
   },
   solar_panel: {
     name: 'Солнечная панель',
-    desc: 'Даёт до 12 ед. энергии; чем дальше от звезды, тем слабее. Ставится у внешней стены.',
+    desc: 'Даёт до 12 ед. энергии; чем дальше от звезды, тем слабее. Панель 2×1 у внешней стены.',
+    size: [2, 1],
     cost: { metal: 15 },
     work: 5,
     maxHp: 30,
@@ -378,6 +382,11 @@ export type BuildKind = ModuleType | Exclude<Tile, 'empty'>;
 
 export function isModuleType(kind: string): kind is ModuleType {
   return kind in MODULES;
+}
+
+/** Сколько клеток занимает модуль, слева направо и сверху вниз. */
+export function moduleSize(type: ModuleType): readonly [number, number] {
+  return MODULES[type].size ?? [1, 1];
 }
 
 export function buildCost(kind: BuildKind): Partial<Resources> {
