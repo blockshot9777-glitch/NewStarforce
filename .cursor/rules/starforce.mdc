@@ -11,3 +11,4 @@ alwaysApply: true
 - Баланс — в defs.ts. Тексты и комментарии — на русском.
 - После изменений: `npm run typecheck && npm test`; для клиента ещё `npm run build`.
 - Новая механика = новый тест в packages/shared/test/.
+- Закончил задачу — коммит и `git push` в текущую ветку, не ждать просьбы.
