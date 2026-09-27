@@ -1,10 +1,12 @@
-# Спрайты
+# Спрайты модулей
 
-Интерьер корабля — лист Buch, Sci-fi Interior (CC0): `kenney/interior.png`, клетки 32×32.
-Экипаж — скафандры Kenney, Sci-fi RTS (CC0): `kenney/crew.png`.
+**Сначала прочитайте `docs/ART_STYLE.md`.** Стиль — тёмный индустриальный sci-fi, вид сверху, рисованные
+текстуры. Пиксель-арт, дерево, песочные цвета и мультяшность не подходят.
 
-Если лист не загрузился, клетка рисуется процедурно.
+Положите сюда PNG с именем типа модуля — игра подхватит его вместо процедурной отрисовки.
+Картинка рисуется на одну клетку: 64×64 px (или 128×128 для HiDPI), прозрачный фон, свет сверху-слева.
 
-Отдельный PNG `public/sprites/<тип>.png` (64×64) по-прежнему заменяет картинку одного модуля.
-Имена: bridge, reactor, battery, engine, o2gen, water_recycler, hydroponics, bed, medbay,
-shield_gen, laser, missile, radar, mining_laser, lamp, solar_panel, cryopod, vent.
+Имена файлов: bridge, reactor, battery, engine, o2gen, water_recycler, hydroponics, bed, medbay,
+shield_gen, laser, missile, radar, mining_laser, lamp, solar_panel, cryopod, vent — например `reactor.png`.
+
+Каждый файл не собственного производства — строка в `/CREDITS.md` (автор, источник, лицензия).
