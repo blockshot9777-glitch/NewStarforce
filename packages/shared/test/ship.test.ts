@@ -24,6 +24,7 @@ import {
   orderCryo,
   placeBlueprint,
   shipRooms,
+  stepAir,
   toggleUrgent,
   updateCrew,
   updateFires,
@@ -221,6 +222,46 @@ describe('строительство', () => {
     expect(moduleAt(ship, 12, 6)).toBe(bay);
     expect(moduleAt(ship, 13, 6)).toBeUndefined();
     expect(validateBuild(ship, 12, 6, 'lamp')).toMatch(/занята/);
+  });
+
+  it('вентиляция в стене выравнивает воздух закрытых отсеков', () => {
+    const { ship, ctx } = setup();
+    expect(validateBuild(ship, 7, 3, 'vent')).toMatch(/стену/);
+    let spot: { x: number; y: number } | null = null;
+    for (let y = 0; y < ship.h && !spot; y++) {
+      for (let x = 0; x < ship.w; x++) {
+        if (validateBuild(ship, x, y, 'vent') === null) spot = { x, y };
+      }
+    }
+    expect(spot).not.toBeNull();
+    const map = shipRooms(ship);
+    const ids: number[] = [];
+    for (const n of [
+      { x: 1, y: 0 },
+      { x: -1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: -1 },
+    ]) {
+      const r = map.roomOf[(spot!.y + n.y) * ship.w + (spot!.x + n.x)];
+      if (r >= 0 && !ids.includes(r)) ids.push(r);
+    }
+    expect(ids.length).toBeGreaterThanOrEqual(2);
+    const fill = (va: number, vb: number) => {
+      for (const t of map.rooms[ids[0]].tiles) ship.air[t] = va;
+      for (const t of map.rooms[ids[1]].tiles) ship.air[t] = vb;
+    };
+    const sample = () => ship.air[map.rooms[ids[1]].tiles[0]];
+    fill(1, 0);
+    for (let i = 0; i < 20; i++) stepAir(ship, ship.air, map, { deltas: new Map(), openDoors: new Set() }, 0.1);
+    const leaked = sample();
+    fill(1, 0);
+    for (let i = 0; i < 20; i++) stepAir(ship, ship.air, map, { deltas: new Map(), openDoors: new Set(), vents: [[ids[0], ids[1]]] }, 0.1);
+    expect(sample()).toBeGreaterThan(leaked + 0.2);
+    expect(placeBlueprint(ship, 7000, spot!.x, spot!.y, 'vent')).toBeNull();
+    ship.blueprints[0].delivered = { metal: 8 };
+    completeBlueprint(ship, 7000, ctx);
+    expect(moduleAt(ship, spot!.x, spot!.y)?.type).toBe('vent');
+    expect(ship.tiles[spot!.y * ship.w + spot!.x]).toBe('wall');
   });
 });
 

@@ -108,7 +108,8 @@ export type ModuleType =
   | 'mining_laser'
   | 'lamp'
   | 'solar_panel'
-  | 'cryopod';
+  | 'cryopod'
+  | 'vent';
 
 export type BuildCategory = 'orders' | 'tiles' | 'power' | 'air' | 'water' | 'food' | 'furniture' | 'medicine' | 'security' | 'ship';
 
@@ -147,6 +148,8 @@ export interface ModuleDef {
   light?: number;
   /** Прямоугольник клеток. Левый верх — точка постановки. Нет поля — одна клетка. */
   size?: readonly [number, number];
+  /** Ставится в межкомнатную стену и соединяет воздух двух отсеков. */
+  wallMount?: boolean;
   glyph: string;
   color: string;
 }
@@ -216,6 +219,19 @@ export const MODULES: Record<ModuleType, ModuleDef> = {
     category: 'air',
     glyph: 'O',
     color: '#80deea',
+  },
+  vent: {
+    name: 'Вентиляция',
+    desc: 'Решётка в стене между отсеками. Воздух идёт, даже если дверь закрыта.',
+    cost: { metal: 8 },
+    work: 4,
+    maxHp: 40,
+    demand: 0,
+    priority: 0,
+    category: 'air',
+    wallMount: true,
+    glyph: '▦',
+    color: '#4dd0e1',
   },
   water_recycler: {
     name: 'Водоочиститель',
@@ -408,6 +424,8 @@ export const O2_PER_TILE = 2;
 export const O2_GEN_RATE = 0.8;
 /** Доля разницы концентраций, выравниваемая через открытую дверь за секунду. */
 export const DOOR_FLOW = 0.8;
+/** Решётка гоняет воздух между отсеками слабее открытой двери, но всегда. */
+export const VENT_FLOW = 0.55;
 /** То же для закрытой двери — небольшая негерметичность. */
 export const DOOR_LEAK = 0.02;
 /** Доля воздуха, теряемая за секунду комнатой с пробоиной. */

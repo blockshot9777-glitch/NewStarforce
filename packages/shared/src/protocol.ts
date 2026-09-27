@@ -2,7 +2,7 @@
 import type { Biome, BuildKind, HullClass, ModuleType, NpcType, Physical, Resource, Resources } from './defs';
 import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry, WorkPriority } from './state';
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 export type Command =
   | { c: 'move'; x: number; y: number }

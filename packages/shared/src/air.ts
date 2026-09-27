@@ -1,7 +1,7 @@
 // Комнаты и воздух. Комнаты — связные области пола, разделённые стенами и дверями
 // (тот же принцип, что в прототипе STARFORCE.IO 2017 года). Воздух хранится как концентрация
 // 0..1 на каждой клетке: так он переживает перестройку корабля без пересчёта «чьих» комнат.
-import { DOOR_FLOW, DOOR_LEAK, O2_PER_TILE, VENT_LOSS } from './defs';
+import { DOOR_FLOW, DOOR_LEAK, O2_PER_TILE, VENT_FLOW, VENT_LOSS } from './defs';
 import { inBounds, neighbors4, type Grid } from './grid';
 
 export interface Room {
@@ -63,6 +63,8 @@ export interface AirSources {
   deltas: Map<number, number>;
   /** Двери, открытые прямо сейчас (в проёме кто-то стоит). Остальные почти герметичны. */
   openDoors: Set<number>;
+  /** Пары комнат, соединённых решёткой. */
+  vents?: [number, number][];
 }
 
 /**
@@ -95,6 +97,13 @@ export function stepAir(g: Grid, air: number[], map: RoomMap, sources: AirSource
         conc[rb] += amount / cap[rb];
       }
     }
+  }
+  for (const [ra, rb] of sources.vents ?? []) {
+    if (ra === rb || cap[ra] === undefined || cap[rb] === undefined) continue;
+    const k = Math.min(1, VENT_FLOW * dt);
+    const amount = (k * (conc[ra] - conc[rb]) * Math.min(cap[ra], cap[rb])) / 2;
+    conc[ra] -= amount / cap[ra];
+    conc[rb] += amount / cap[rb];
   }
   for (let i = 0; i < conc.length; i++) conc[i] = Math.max(0, Math.min(1, conc[i]));
   air.length = g.tiles.length;

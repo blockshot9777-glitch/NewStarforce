@@ -351,6 +351,19 @@ function drawProcedural(ctx: CanvasRenderingContext2D, type: ModuleType, s: numb
       }
       break;
     }
+    case 'vent': {
+      ctx.fillStyle = '#263238';
+      ctx.fillRect(s * 0.12, s * 0.12, s * 0.76, s * 0.76);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(1, s * 0.06);
+      for (let i = 1; i <= 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(s * 0.18, s * (0.12 + 0.19 * i));
+        ctx.lineTo(s * 0.82, s * (0.12 + 0.19 * i));
+        ctx.stroke();
+      }
+      break;
+    }
     case 'cryopod': {
       ctx.fillStyle = '#b0bec5';
       roundRect(ctx, s * 0.14, s * 0.06, s * 0.72, s * 0.88, s * 0.3);

@@ -443,12 +443,24 @@ export function lifeSupport(ship: Ship, dt: number, nextId: () => number): void 
     deltas.set(tile, (deltas.get(tile) ?? 0) - O2_PER_CREW * dt);
   }
   const rooms = shipRooms(ship);
+  const vents: [number, number][] = [];
+  for (const m of ship.modules) {
+    if (m.type !== 'vent' || !functional(m)) continue;
+    const ids = new Set<number>();
+    for (const n of neighbors4(m.x, m.y)) {
+      if (!inBounds(ship, n.x, n.y)) continue;
+      const room = rooms.roomOf[n.y * ship.w + n.x];
+      if (room >= 0) ids.add(room);
+    }
+    const pair = [...ids];
+    if (pair.length >= 2) vents.push([pair[0], pair[1]]);
+  }
   const openDoors = new Set<number>();
   for (const c of ship.crew) {
     const t = Math.round(c.y) * ship.w + Math.round(c.x);
     if (ship.tiles[t] === 'door') openDoors.add(t);
   }
-  const conc = stepAir(ship, ship.air, rooms, { deltas, openDoors }, dt);
+  const conc = stepAir(ship, ship.air, rooms, { deltas, openDoors, vents }, dt);
   ship.oxygen = rooms.rooms.reduce((sum, r, i) => sum + conc[i] * r.tiles.length * O2_PER_TILE, 0);
 }
 
@@ -525,7 +537,19 @@ export function validateBuild(ship: Ship, x: number, y: number, kind: BuildKind)
   if (blueprintAt(ship, x, y)) return 'Здесь уже есть чертёж';
   const tile = tileAt(ship, x, y);
   const hasNeighbor = neighbors4(x, y).some((p) => tileAt(ship, p.x, p.y) !== 'empty');
-  if (isModuleType(kind)) {
+  if (isModuleType(kind) && MODULES[kind].wallMount) {
+    if (tile !== 'wall') return 'Ставится в стену между отсеками';
+    if (isOuterWall(ship, x, y)) return 'Не во внешней обшивке';
+    if (moduleAt(ship, x, y)) return 'Клетка занята модулем';
+    const rooms = new Set<number>();
+    const map = shipRooms(ship);
+    for (const n of neighbors4(x, y)) {
+      if (!inBounds(ship, n.x, n.y)) continue;
+      const room = map.roomOf[n.y * ship.w + n.x];
+      if (room >= 0) rooms.add(room);
+    }
+    if (rooms.size < 2) return 'Стена должна разделять два отсека';
+  } else if (isModuleType(kind)) {
     const cells = footprint(kind, x, y);
     for (const c of cells) {
       if (!inBounds(ship, c.x, c.y)) return 'Вне корпуса';
@@ -598,6 +622,13 @@ export function completeBlueprint(ship: Ship, bpId: number, ctx: ShipContext): v
         scatter(ship, buildCost(tile), 0.5, bp.x, bp.y, ctx.nextId);
         ship.tiles[idx] = tile === 'floor' ? 'empty' : 'floor';
       }
+    }
+  } else if (isModuleType(bp.kind) && MODULES[bp.kind].wallMount) {
+    if (tileAt(ship, bp.x, bp.y) === 'wall' && !moduleAt(ship, bp.x, bp.y)) {
+      ship.modules.push(makeModule(ctx.nextId(), bp.kind, bp.x, bp.y));
+      ctx.log(`Построен модуль: ${MODULES[bp.kind].name}`, 'good');
+    } else if (!bp.free) {
+      refundDelivered(ship, bp, ctx.nextId);
     }
   } else if (isModuleType(bp.kind)) {
     const cells = footprint(bp.kind, bp.x, bp.y);
