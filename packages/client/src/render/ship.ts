@@ -197,27 +197,11 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
       const air = ship.roomAir[ri] ?? 0;
       ctx.fillStyle = ROOM_COLORS[ri % ROOM_COLORS.length];
       ctx.globalAlpha = 0.15 + 0.5 * air;
-      let sx = 0;
-      let sy = 0;
       for (const tIdx of room.tiles) {
         const p = at(tIdx % l.w, Math.floor(tIdx / l.w));
         ctx.fillRect(p.x, p.y, ts + 0.5, ts + 0.5);
-        sx += tIdx % l.w;
-        sy += Math.floor(tIdx / l.w);
       }
       ctx.globalAlpha = 1;
-      if (ts >= 14) {
-        const c = at(sx / room.tiles.length + 0.5, sy / room.tiles.length + 0.5);
-        ctx.font = `bold ${Math.max(10, ts * 0.45)}px system-ui`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = room.vented ? '#ff1744' : '#fff';
-        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-        ctx.lineWidth = 3;
-        const label = room.vented ? `ПРОБОИНА ${Math.round(air * 100)}%` : `${Math.round(air * 100)}%`;
-        ctx.strokeText(label, c.x, c.y);
-        ctx.fillText(label, c.x, c.y);
-      }
     });
   }
 
@@ -342,6 +326,38 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
 
   // Освещение: затемняем интерьер и «вырезаем» пятна света от ламп и светящихся модулей.
   drawLighting(ctx, ship, l, ox, oy, ts);
+  // Проценты воздуха — после модулей и темноты, иначе при отдалении их закрывает постройка.
+  if (store.airOverlay) drawAirLabels(ctx, ship, l, at, ts);
+}
+
+function drawAirLabels(
+  ctx: CanvasRenderingContext2D,
+  ship: OwnShipView,
+  l: ParsedLayout,
+  at: (x: number, y: number) => { x: number; y: number },
+  ts: number,
+): void {
+  if (ts < 8) return;
+  l.rooms.rooms.forEach((room, ri) => {
+    if (!room.tiles.length) return;
+    const air = ship.roomAir[ri] ?? 0;
+    let sx = 0;
+    let sy = 0;
+    for (const tIdx of room.tiles) {
+      sx += tIdx % l.w;
+      sy += Math.floor(tIdx / l.w);
+    }
+    const c = at(sx / room.tiles.length + 0.5, sy / room.tiles.length + 0.5);
+    const label = room.vented ? `ПРОБОИНА ${Math.round(air * 100)}%` : `${Math.round(air * 100)}%`;
+    ctx.font = `bold ${Math.max(9, Math.min(16, ts * 0.42))}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+    ctx.fillStyle = room.vented ? '#ff1744' : '#fff';
+    ctx.strokeText(label, c.x, c.y);
+    ctx.fillText(label, c.x, c.y);
+  });
 }
 
 let lightCanvas: HTMLCanvasElement | null = null;
