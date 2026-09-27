@@ -285,9 +285,30 @@ describe('мир', () => {
     expect(b.toJSON()).toBe(a.toJSON());
   });
 
+  it('приоритет работы ставится командой', () => {
+    const { w, p, ship } = newWorld();
+    const id = ship.crew[0].id;
+    expect(w.command(p.id, { c: 'setPriority', crewId: id, kind: 'build', value: 1 })).toBeNull();
+    expect(ship.crew[0].priorities.build).toBe(1);
+    expect(w.snapshotFor(p.id, newClientCache()).ship!.crew[0].priorities.build).toBe(1);
+    expect(w.command(p.id, { c: 'setPriority', crewId: id, kind: 'build', value: 5 })).toMatch(/0 до 4/);
+    expect(w.command(p.id, { c: 'setPriority', crewId: id, kind: 'dance', value: 1 })).toMatch(/работ/);
+    expect(ship.crew[0].priorities.build).toBe(1);
+  });
+
+  it('старое сохранение без приоритетов получает значения по умолчанию', () => {
+    const w = World.create(3);
+    w.join('A', 'tok');
+    const raw = JSON.parse(w.toJSON()) as { ships: { crew: { priorities?: unknown }[] }[] };
+    for (const c of raw.ships[0].crew) delete c.priorities;
+    const loaded = World.fromJSON(JSON.stringify(raw));
+    const crew = loaded.state.ships[0].crew[0];
+    expect(crew.priorities).toEqual({ extinguish: 1, pilot: 2, repair: 3, harvest: 4, build: 4, cryo: 1 });
+  });
+
   it('мусорные команды не роняют сервер', () => {
     const { w, p } = newWorld();
-    const junk: unknown[] = [null, 5, 'x', {}, { c: 1 }, { c: 'move', x: 'a' }, { c: 'build', x: 1.5, y: 2, kind: 'floor' }, { c: 'build', x: 1, y: 1, kind: '__proto__' }, { c: 'target', id: {} }, { c: 'jump', systemId: 99 }, { c: 'nope' }];
+    const junk: unknown[] = [null, 5, 'x', {}, { c: 1 }, { c: 'move', x: 'a' }, { c: 'build', x: 1.5, y: 2, kind: 'floor' }, { c: 'build', x: 1, y: 1, kind: '__proto__' }, { c: 'target', id: {} }, { c: 'jump', systemId: 99 }, { c: 'nope' }, { c: 'setPriority', crewId: 1.5, kind: 'build', value: 1 }, { c: 'setPriority', crewId: 1, kind: 5, value: 1 }];
     for (const j of junk) expect(typeof w.command(p.id, j)).toBe('string');
     stepSeconds(w, 1);
   });

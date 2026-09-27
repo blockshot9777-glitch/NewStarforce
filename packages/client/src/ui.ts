@@ -18,6 +18,8 @@ import {
   systemDistance,
   type BuildCategory,
   type BuildKind,
+  type JobKind,
+  type WorkPriority,
   type Contact,
   type OwnShipView,
   type Resource,
@@ -75,6 +77,14 @@ const JOB_NAMES: Record<string, string> = {
   extinguish: 'тушит пожар',
   cryo: 'идёт в капсулу',
 };
+
+const PRIORITY_COLUMNS: { kind: JobKind; name: string }[] = [
+  { kind: 'extinguish', name: 'Пожар' },
+  { kind: 'pilot', name: 'Мостик' },
+  { kind: 'repair', name: 'Ремонт' },
+  { kind: 'harvest', name: 'Урожай' },
+  { kind: 'build', name: 'Стройка' },
+];
 
 const BUILD_ITEMS: Record<BuildCategory, BuildKind[]> = {
   orders: [],
@@ -147,6 +157,13 @@ function handleAction(el: HTMLElement): void {
     case 'cryo':
       send({ c: 'cryo', crewId: id });
       break;
+    case 'priority': {
+      const kind = el.dataset.kind as JobKind;
+      const cur = own?.crew.find((c) => c.id === id)?.priorities[kind] ?? 3;
+      const next = (cur >= 4 ? 0 : cur + 1) as WorkPriority;
+      send({ c: 'setPriority', crewId: id, kind, value: next });
+      break;
+    }
     case 'selcrew':
       store.selectedCrew = store.selectedCrew === id ? null : id;
       break;
@@ -355,6 +372,10 @@ function renderCrew(own: OwnShipView | null): void {
   const rows = own.crew
     .map((c) => {
       const s = c.skills;
+      const pri = PRIORITY_COLUMNS.map(({ kind, name }) => {
+        const v = c.priorities[kind];
+        return `<button class="pri ${v === 0 ? 'off' : ''}" data-act="priority" data-id="${c.id}" data-kind="${kind}" title="${name}: 1 — в первую очередь, 4 — в последнюю, 0 — не делать">${name} ${v}</button>`;
+      }).join('');
       return `<tr class="${store.selectedCrew === c.id ? 'sel' : ''}">
         <td><a data-act="selcrew" data-id="${c.id}">${c.robot ? '🤖 ' : ''}${esc(c.name)}</a></td>
         <td title="Здоровье">${bar(c.health, c.health < 35 ? '#ff5252' : '#69f0ae')}</td>
@@ -364,14 +385,14 @@ function renderCrew(own: OwnShipView | null): void {
         <td class="skills" title="Инженерия / Ботаника / Пилотирование / Бой">${s.engineering}/${s.botany}/${s.piloting}/${s.combat}</td>
         <td>${c.robot ? '' : `<button data-act="cryo" data-id="${c.id}">${c.state === 'cryo' ? 'Разбудить' : '❄ Криосон'}</button>`}
             <button data-act="expcrew" data-id="${c.id}" class="${store.expeditionCrew.has(c.id) ? 'on' : ''}" title="Выбрать для высадки на планету">🚀</button></td>
-      </tr>`;
+      </tr><tr class="pri-row"><td colspan="7">${pri}</td></tr>`;
     })
     .join('');
   setHtml(
     el,
     `<div class="panel-title">Команда ${own.crew.length + away}/${own.crewCap}${away ? ` (на планете: ${away})` : ''}</div>
      <table><tr><th>Имя</th><th>❤</th><th>🍞</th><th>☾</th><th>Занятие</th><th>И/Б/П/Б</th><th></th></tr>${rows}</table>
-     <div class="hint">🚀 — отметить для высадки. Затем в режиме «Звёздная система» выберите планету на орбите.</div>`,
+     <div class="hint">Цифры под именем — приоритет работы: 1 раньше всего, 4 позже, 0 запрещает. 🚀 — отметить для высадки.</div>`,
   );
 }
 

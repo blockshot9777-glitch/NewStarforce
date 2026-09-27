@@ -49,7 +49,7 @@ import {
   type Resources,
   type WeaponDef,
 } from './defs';
-import { isPiloted, orderCryo, placeCrewOnBoard, toggleUrgent, updateCrew } from './crew';
+import { isPiloted, normalizePriorities, orderCryo, placeCrewOnBoard, setPriority, toggleUrgent, updateCrew } from './crew';
 import type { Command, Contact, LayoutView, OwnShipView, Snapshot } from './protocol';
 import { Rng } from './rng';
 import {
@@ -186,6 +186,8 @@ export class World {
   static fromJSON(json: string): World {
     const state = JSON.parse(json) as WorldState;
     for (const sys of state.systems) sys.fx = [];
+    for (const ship of state.ships) for (const c of ship.crew) normalizePriorities(c);
+    for (const e of state.expeditions) for (const c of e.crew) normalizePriorities(c);
     return new World(state);
   }
 
@@ -1048,6 +1050,9 @@ export class World {
       case 'cryo':
         if (!isInt(cmd.crewId)) return 'Некорректный член экипажа';
         return orderCryo(ship, cmd.crewId);
+      case 'setPriority':
+        if (!isInt(cmd.crewId) || typeof cmd.kind !== 'string' || !isInt(cmd.value)) return 'Некорректный приоритет';
+        return setPriority(ship, cmd.crewId, cmd.kind, cmd.value);
       case 'expedition':
         return this.startExpedition(player, ship, cmd.planetId, cmd.crewIds);
       case 'recall': {
@@ -1242,6 +1247,7 @@ export class World {
         state: c.state,
         job: c.job?.kind ?? null,
         skills: c.skills,
+        priorities: { ...c.priorities },
       })),
       fires: Object.entries(ship.fires).map(([t, v]) => [Number(t), r2(v)]),
       urgent: [...ship.urgent],

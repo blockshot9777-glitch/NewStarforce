@@ -37,6 +37,16 @@ export interface Blueprint {
 
 export type JobKind = 'build' | 'harvest' | 'repair' | 'pilot' | 'extinguish' | 'cryo';
 
+/** 1 — берётся в первую очередь, 4 — в последнюю, 0 — эту работу не делает. */
+export type WorkPriority = 0 | 1 | 2 | 3 | 4;
+
+export const JOB_KINDS: readonly JobKind[] = ['extinguish', 'pilot', 'repair', 'harvest', 'build', 'cryo'];
+
+/** Как сейчас устроен общий порядок: пожар, мостик, ремонт, урожай и стройка. */
+export function defaultPriorities(): Record<JobKind, WorkPriority> {
+  return { extinguish: 1, pilot: 2, repair: 3, harvest: 4, build: 4, cryo: 1 };
+}
+
 export interface Job {
   kind: JobKind;
   /** id чертежа или модуля; для пожара — индекс клетки. */
@@ -67,6 +77,8 @@ export interface Crew {
   food: number;
   rest: number;
   skills: CrewSkills;
+  /** Личные приоритеты работ. Криосон сюда входит для полноты типа, приказ им не управляется. */
+  priorities: Record<JobKind, WorkPriority>;
   state: CrewState;
   job: Job | null;
   timer: number;

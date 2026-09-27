@@ -308,6 +308,21 @@ button.chip {
   color: var(--muted);
 }
 
+#crew tr.pri-row td {
+  padding-top: 0;
+  white-space: normal;
+}
+
+#crew button.pri {
+  margin: 0 4px 4px 0;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+#crew button.pri.off {
+  opacity: 0.4;
+}
+
 .mini {
   width: 48px;
   height: 6px;

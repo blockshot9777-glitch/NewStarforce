@@ -37,7 +37,7 @@ import {
 import { computeRooms, stepAir, type RoomMap } from './air';
 import { inBounds, isWalkable, neighbors4, tileAt } from './grid';
 import type { Rng } from './rng';
-import type { Crew, LogEntry, Ship, ShipModule, Vec } from './state';
+import { defaultPriorities, type Crew, type LogEntry, type Ship, type ShipModule, type Vec } from './state';
 
 export interface ShipContext {
   rng: Rng;
@@ -67,6 +67,7 @@ export function randomCrew(rng: Rng, id: number, x: number, y: number): Crew {
     food: rng.range(70, 100),
     rest: rng.range(70, 100),
     skills: { engineering: skill(), botany: skill(), piloting: skill(), combat: skill() },
+    priorities: defaultPriorities(),
     state: 'idle',
     job: null,
     timer: 0,

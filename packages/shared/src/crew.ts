@@ -1,11 +1,44 @@
 // ИИ экипажа в духе RimWorld: потребности → задачи → перемещение по сетке корабля.
 import { CREW_SPEED, EAT_RESTORE, EAT_SECONDS, FOOD_DECAY, HYDRO_YIELD, MODULES, REST_DECAY, ROBOT_SPEED_MULT, SUFFOCATE_BELOW, DARK_WORK_MULT } from './defs';
 import { findPath, isWalkable, neighbors4, tileAt } from './grid';
-import type { Crew, Job, JobKind, Ship, ShipModule, Vec } from './state';
+import { JOB_KINDS, defaultPriorities, type Crew, type Job, type JobKind, type Ship, type ShipModule, type Vec, type WorkPriority } from './state';
 import { airAt, blueprintAt, completeBlueprint, functional, isLit, moduleAt, walkableTiles, type ShipContext } from './ship';
 
-/** Порядок, в котором свободный член экипажа берётся за работу (важные задачи — всегда первыми). */
+/** Запасной порядок, когда личные приоритеты совпали: пожар, мостик, ремонт, урожай, стройка. */
 const JOB_PRIORITY: JobKind[] = ['extinguish', 'pilot', 'repair', 'harvest', 'build'];
+
+function priorityOf(c: Crew, kind: JobKind): WorkPriority {
+  const v = c.priorities?.[kind];
+  return typeof v === 'number' && v >= 0 && v <= 4 ? (v as WorkPriority) : defaultPriorities()[kind];
+}
+
+/**
+ * Чем меньше число, тем раньше берут задачу.
+ * 0 в приоритете человека — работу пропускает.
+ * Пометка «важно», пожар и пробоина обгоняют обычные дела, если человек их не запретил.
+ */
+function jobRank(ship: Ship, c: Crew, j: Job, urgent: Set<string>): number | null {
+  if (j.kind !== 'cryo' && priorityOf(c, j.kind) === 0) return null;
+  const p = priorityOf(c, j.kind);
+  if (urgent.has(jobKey(j))) return p;
+  if (j.kind === 'extinguish') return 10 + p;
+  const breach = j.kind === 'build' && !!ship.blueprints.find((b) => b.id === j.targetId)?.free;
+  if (breach) return 20 + p;
+  return 30 + p * 10 + Math.max(0, JOB_PRIORITY.indexOf(j.kind));
+}
+
+/** Дописывает приоритеты старому сохранению, где поля ещё не было. */
+export function normalizePriorities(c: Crew): void {
+  const next = defaultPriorities();
+  const raw = c.priorities;
+  if (raw) {
+    for (const k of JOB_KINDS) {
+      const v = raw[k];
+      if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 4) next[k] = v as WorkPriority;
+    }
+  }
+  c.priorities = next;
+}
 
 export function jobKey(j: Pick<Job, 'kind' | 'targetId'>): string {
   return `${j.kind}:${j.targetId}`;
@@ -150,6 +183,22 @@ export function orderCryo(ship: Ship, crewId: number): string | null {
   return 'Нет свободной запитанной криокапсулы';
 }
 
+/** Поставить личный приоритет работы: 1 важнее всего, 4 — в конце, 0 — не делать. */
+export function setPriority(ship: Ship, crewId: number, kind: string, value: number): string | null {
+  const c = ship.crew.find((o) => o.id === crewId);
+  if (!c) return 'Нет такого члена экипажа на борту';
+  if (!JOB_KINDS.includes(kind as JobKind)) return 'Нет такой работы';
+  if (!Number.isInteger(value) || value < 0 || value > 4) return 'Приоритет от 0 до 4';
+  if (!c.priorities) c.priorities = defaultPriorities();
+  c.priorities[kind as JobKind] = value as WorkPriority;
+  if (c.job?.kind === kind && value === 0 && kind !== 'cryo') {
+    c.job = null;
+    c.path = [];
+    if (c.state === 'working') c.state = 'idle';
+  }
+  return null;
+}
+
 /** Пометить задачу на клетке как важную (или снять пометку). */
 export function toggleUrgent(ship: Ship, x: number, y: number): string | null {
   const t = y * ship.w + x;
@@ -206,7 +255,8 @@ export function updateCrew(ship: Ship, dt: number, ctx: ShipContext): void {
     const critical = !c.robot && (c.food < 15 || c.rest < 5 || (emergency ? c.health < 25 : c.health < 35) || lowAir);
     if (c.job) {
       const isCryo = c.job.kind === 'cryo';
-      if ((!isCryo && critical) || !jobStillValid(ship, c, c.job, ctx)) releaseJob(c, reserved);
+      const forbidden = !isCryo && priorityOf(c, c.job.kind) === 0;
+      if (forbidden || (!isCryo && critical) || !jobStillValid(ship, c, c.job, ctx)) releaseJob(c, reserved);
       else if (preemptBudget > 0 && !isCryo && c.job.kind !== 'pilot' && !urgent.has(jobKey(c.job))) {
         releaseJob(c, reserved);
         preemptBudget--;
@@ -289,13 +339,16 @@ export function updateCrew(ship: Ship, dt: number, ctx: ShipContext): void {
           continue;
         }
       }
-      // 4. Работа: сначала важные, потом по приоритету, внутри — ближайшая.
+      // 4. Работа: важные, пожары и пробоины впереди, остальное — по личному приоритету, внутри — ближайшая.
       const free = jobs.filter((j) => !reserved.has(jobKey(j)));
       const dist = (j: Job) => Math.abs(j.x - c.x) + Math.abs(j.y - c.y);
-      const isBreach = (j: Job) => j.kind === 'build' && !!ship.blueprints.find((b) => b.id === j.targetId)?.free;
-      // Порядок: важные → пожары → пробоины → остальное по приоритету; внутри группы — ближайшая.
-      const rank = (j: Job) => (urgent.has(jobKey(j)) ? -2 : j.kind === 'extinguish' ? -1 : isBreach(j) ? -0.5 : JOB_PRIORITY.indexOf(j.kind));
-      const ordered = [...free].sort((a, b) => rank(a) - rank(b) || dist(a) - dist(b));
+      const ordered = free
+        .flatMap((j) => {
+          const rank = jobRank(ship, c, j, urgent);
+          return rank === null ? [] : [{ j, rank }];
+        })
+        .sort((a, b) => a.rank - b.rank || dist(a.j) - dist(b.j))
+        .map((x) => x.j);
       let taken = false;
       for (const j of ordered) {
         const path = workSpot(ship, c, j.x, j.y);

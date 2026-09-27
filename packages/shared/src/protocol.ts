@@ -1,8 +1,8 @@
 // Сообщения между клиентом и сервером. Клиент только просит — всё решает сервер.
 import type { Biome, BuildKind, HullClass, ModuleType, NpcType, Resource, Resources } from './defs';
-import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry } from './state';
+import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry, WorkPriority } from './state';
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export type Command =
   | { c: 'move'; x: number; y: number }
@@ -14,6 +14,7 @@ export type Command =
   | { c: 'urgent'; x: number; y: number }
   | { c: 'toggle'; moduleId: number }
   | { c: 'cryo'; crewId: number }
+  | { c: 'setPriority'; crewId: number; kind: JobKind; value: WorkPriority }
   | { c: 'expedition'; planetId: number; crewIds: number[] }
   | { c: 'recall'; expeditionId: number }
   | { c: 'trade'; resource: Resource; amount: number }
@@ -49,6 +50,7 @@ export interface CrewView {
   state: CrewState;
   job: JobKind | null;
   skills: CrewSkills;
+  priorities: Record<JobKind, WorkPriority>;
 }
 
 export interface ModuleView {

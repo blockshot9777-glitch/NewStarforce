@@ -11,6 +11,7 @@ import {
   findPath,
   igniteTile,
   isOuterWall,
+  setPriority,
   lifeSupport,
   makeModule,
   makeRobot,
@@ -221,6 +222,36 @@ describe('криокапсулы и важные задачи', () => {
     ship.modules.find((m) => m.type === 'cryopod')!.enabled = false;
     run(ship, ctx, 1);
     expect(c.state).not.toBe('cryo');
+  });
+
+  it('личный приоритет берёт стройку и может запретить урожай и пожар', () => {
+    const { ship, ctx } = setup();
+    const hydro = findModule(ship, 'hydroponics');
+    hydro.growth = 1;
+    ship.res.metal = 100;
+    expect(placeBlueprint(ship, 5000, 7, 3, 'lamp')).toBeNull();
+    for (const c of ship.crew) {
+      c.food = 100;
+      c.rest = 100;
+      c.health = 100;
+      expect(setPriority(ship, c.id, 'build', 1)).toBeNull();
+      expect(setPriority(ship, c.id, 'harvest', 0)).toBeNull();
+    }
+    run(ship, ctx, 0.5);
+    expect(ship.crew.some((c) => c.job?.kind === 'build' && c.job.targetId === 5000)).toBe(true);
+    expect(ship.crew.every((c) => c.job?.kind !== 'harvest')).toBe(true);
+
+    for (const c of ship.crew) {
+      expect(setPriority(ship, c.id, 'extinguish', 0)).toBeNull();
+      c.job = null;
+      c.path = [];
+      c.state = 'idle';
+    }
+    expect(igniteTile(ship, 6, 4)).toBe(true);
+    run(ship, ctx, 2);
+    expect(ship.crew.every((c) => c.job?.kind !== 'extinguish')).toBe(true);
+    expect(ship.fires[4 * ship.w + 6]).toBeGreaterThan(0);
+    expect(setPriority(ship, ship.crew[0].id, 'build', 5)).toMatch(/0 до 4/);
   });
 
   it('важная задача срывает работника с текущего дела', () => {
