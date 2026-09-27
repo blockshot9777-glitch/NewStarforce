@@ -111,7 +111,8 @@ function paintWall(
   tileAt: (x: number, y: number) => string,
 ): void {
   if (drawCell(ctx, 'tiles', WALL_CELL[0], WALL_CELL[1], x, y, ts + 0.5)) return;
-  if (drawPaintedTile(ctx, 'wall', x, y, ts + 0.5, 0)) return;
+  // wall.png — панель с рамкой на каждую клетку. Её не штампуем: соседние стены
+  // сливаются в одну переборку, фаска только там, где соседа-стены нет.
   ctx.fillStyle = '#7f8894';
   ctx.fillRect(x, y, ts + 0.5, ts + 0.5);
   const edge = Math.max(1, ts * 0.14);
@@ -445,7 +446,7 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
     ctx.stroke();
   }
 
-  // Стены: стальная плита, а если картинки нет — фаска по палитре.
+  // Стены: сплошная переборка, фаска только на открытых рёбрах.
   l.grid.tiles.forEach((tile, i) => {
     if (tile !== 'wall') return;
     const x = i % l.w;
