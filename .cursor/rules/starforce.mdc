@@ -1,0 +1,13 @@
+---
+description: Правила проекта StarForce (RimWorld в космосе, авторитарный сервер)
+alwaysApply: true
+---
+
+Перед любой задачей прочитай AGENTS.md в корне репозитория и следуй ему.
+
+Кратко:
+- Игровая логика только в packages/shared/src; клиент рисует и шлёт команды.
+- Состояние мира — простые JSON-данные; никаких Math.random()/Date.now() в shared, только rng.
+- Баланс — в defs.ts. Тексты и комментарии — на русском.
+- После изменений: `npm run typecheck && npm test`; для клиента ещё `npm run build`.
+- Новая механика = новый тест в packages/shared/test/.

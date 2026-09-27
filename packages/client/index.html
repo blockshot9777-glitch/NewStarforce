@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StarForce</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M4 16 L26 6 L20 16 L26 26 Z' fill='%2300e5ff'/></svg>" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <div id="top"></div>
+    <div id="context" class="hidden"></div>
+    <div id="build" class="panel hidden"></div>
+    <div id="crew" class="panel hidden"></div>
+    <div id="galaxy" class="panel hidden"></div>
+    <div id="log"></div>
+    <div id="toast" class="hidden"></div>
+    <div id="bottom">
+      <div id="buttons-left"></div>
+      <input id="chat-input" placeholder="Чат (Enter)" maxlength="200" autocomplete="off" />
+      <div id="buttons-right"></div>
+    </div>
+    <div id="dead" class="overlay-card hidden"></div>
+    <div id="status" class="hidden"></div>
+
+    <div id="help" class="panel hidden">
+      <div class="panel-title">Управление <button data-act="help">✕</button></div>
+      <ul>
+        <li><b>ЛКМ по космосу</b> — лететь (нужен пилот: он садится за мостик сам).</li>
+        <li><b>ЛКМ по объекту</b> — выбрать: атаковать, добывать, высадиться, торговать.</li>
+        <li><b>Колесо</b> — масштаб; отдалитесь — перейдёте в «Звёздную систему».</li>
+        <li><b>Tab / Пробел</b> — корабль ⇄ звёздная система.</li>
+        <li><b>B</b> — строительство, <b>C</b> — команда, <b>O</b> — воздух по комнатам, <b>G</b> — галактика.</li>
+        <li><b>Протяжка мышью</b> — пол и разбор прямоугольником, стены — рамкой.</li>
+        <li><b>ПКМ</b> — отменить инструмент/выбор. <b>Shift+ЛКМ</b> по модулю — вкл/выкл.</li>
+        <li>Пробоина выпускает воздух, пожар без воздуха гаснет. Криокапсула спасает от голода и удушья.</li>
+      </ul>
+    </div>
+
+    <div id="login" class="overlay-card">
+      <div class="logo">STARFORCE</div>
+      <p class="lore">
+        Война машин с применением искусственного интеллекта сделала Землю непригодной для жизни. Последние люди уходят к звёздам
+        на кораблях-ковчегах. Космос держат машины, а на планетах растёт новая, враждебная жизнь.
+      </p>
+      <input id="name-input" placeholder="Имя капитана" maxlength="20" autocomplete="off" />
+      <button id="play" class="big">В космос</button>
+      <p class="muted">Прогресс сохраняется на сервере. Откройте ту же ссылку друзьям в локальной сети — это общий мир.</p>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
