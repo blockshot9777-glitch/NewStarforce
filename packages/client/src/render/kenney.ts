@@ -11,6 +11,15 @@ const SPEC: Record<SheetName, { stride: number; tile: number; url: string }> = {
 
 const sheets: Record<SheetName, HTMLImageElement | null> = { tiles: null, chars: null };
 
+/** Пиксельные листы выключены, пока в адресе нет ?kenney=1. */
+export function kenneyEnabled(): boolean {
+  try {
+    return new URLSearchParams(globalThis.location?.search ?? '').get('kenney') === '1';
+  } catch {
+    return false;
+  }
+}
+
 function load(name: SheetName): void {
   const img = new Image();
   img.onload = () => {
@@ -33,6 +42,7 @@ export function drawCell(
   y: number,
   size: number,
 ): boolean {
+  if (!kenneyEnabled()) return false;
   const img = sheets[sheet];
   const spec = SPEC[sheet];
   if (!img || !img.complete || img.naturalWidth === 0) return false;

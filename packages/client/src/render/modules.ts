@@ -1,7 +1,7 @@
 // Процедурная отрисовка модулей. Если положить PNG в public/sprites/<тип>.png,
 // будет использован спрайт (так можно подключить арт из оригинального STARFORCE.IO).
 import { MODULES, MODULE_TYPES, type ModuleType } from '@starforce/shared';
-import { drawModuleArt } from './kenney';
+import { drawModuleArt, kenneyEnabled } from './kenney';
 
 const sprites = new Map<ModuleType, HTMLImageElement>();
 
@@ -29,22 +29,27 @@ export function drawModule(ctx: CanvasRenderingContext2D, type: ModuleType, x: n
   const h = s * mh;
   ctx.save();
   ctx.translate(x, y);
-  if (mw > 1 || mh > 1) {
-    ctx.fillStyle = def.color;
-    ctx.globalAlpha = 0.28;
-    ctx.fillRect(0, 0, w, h);
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = def.color;
-    ctx.lineWidth = Math.max(1, s * 0.06);
-    ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+  const kenney = kenneyEnabled() && drawModuleArt(ctx, type, (w - s) / 2, (h - s) / 2, s);
+  if (!kenney && sprite) {
+    const prev = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(sprite, 0, 0, w, h);
+    ctx.imageSmoothingEnabled = prev;
+  } else if (!kenney) {
+    if (mw > 1 || mh > 1) {
+      ctx.fillStyle = def.color;
+      ctx.globalAlpha = 0.28;
+      ctx.fillRect(0, 0, w, h);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = def.color;
+      ctx.lineWidth = Math.max(1, s * 0.06);
+      ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+    }
+    ctx.save();
+    ctx.translate((w - s) / 2, (h - s) / 2);
+    drawProcedural(ctx, type, s, look, t, def.color);
+    ctx.restore();
   }
-  ctx.save();
-  ctx.translate((w - s) / 2, (h - s) / 2);
-  if (!drawModuleArt(ctx, type, 0, 0, s)) {
-    if (sprite) ctx.drawImage(sprite, 0, 0, s, s);
-    else drawProcedural(ctx, type, s, look, t, def.color);
-  }
-  ctx.restore();
   if (!look.powered && def.demand > 0 && look.enabled) {
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(0, 0, w, h);

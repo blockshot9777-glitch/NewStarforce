@@ -1,8 +1,9 @@
 // Корпус и интерьер корабля: пол, стены, двери, модули, экипаж, пожары, свет и воздух по комнатам.
-import { MODULES, TILE_WORLD, isModuleType, moduleSize, type ModuleType, type OwnShipView } from '@starforce/shared';
+import { MODULES, TILE_WORLD, isModuleType, moduleSize, type ModuleType, type OwnShipView, type Physical } from '@starforce/shared';
 import { store, type ParsedLayout } from '../store';
 import { DOOR_CELL, WALL_CELL, drawCell, drawPawn, drawStackArt, floorCell } from './kenney';
 import { drawModule, roundRect } from './modules';
+import { drawPaintedItem, drawPaintedPawn, drawPaintedTile } from './painted';
 
 const floorTex = makeFloorTexture();
 
@@ -10,7 +11,7 @@ function makeFloorTexture(): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#2b2f37';
+  g.fillStyle = '#2a2e36';
   g.fillRect(0, 0, 64, 64);
   const grad = g.createLinearGradient(0, 0, 64, 64);
   grad.addColorStop(0, 'rgba(255,255,255,0.05)');
@@ -35,6 +36,183 @@ function makeFloorTexture(): HTMLCanvasElement {
     g.fill();
   }
   return c;
+}
+
+/** Комнаты в одну клетку шириной — коридор, у них другой пол. */
+function corridorRooms(l: ParsedLayout): Set<number> {
+  const thin = new Set<number>();
+  l.rooms.rooms.forEach((room, ri) => {
+    if (!room.tiles.length) return;
+    let minX = l.w;
+    let minY = l.h;
+    let maxX = 0;
+    let maxY = 0;
+    for (const t of room.tiles) {
+      const x = t % l.w;
+      const y = Math.floor(t / l.w);
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+    if (maxX === minX || maxY === minY) thin.add(ri);
+  });
+  return thin;
+}
+
+function floorKey(l: ParsedLayout, gx: number, gy: number, stock: Set<number> | null, thin: Set<number>): string {
+  const i = gy * l.w + gx;
+  if (stock?.has(i)) return 'floor_stockpile';
+  const room = l.rooms.roomOf[i] ?? -1;
+  if (room >= 0 && thin.has(room)) return 'floor_corridor';
+  return 'floor';
+}
+
+function paintFloor(
+  ctx: CanvasRenderingContext2D,
+  l: ParsedLayout,
+  gx: number,
+  gy: number,
+  x: number,
+  y: number,
+  ts: number,
+  stock: Set<number> | null,
+  thin: Set<number>,
+): void {
+  const [fc, fr] = floorCell(gx, gy);
+  if (drawCell(ctx, 'tiles', fc, fr, x, y, ts + 0.5)) return;
+  const key = floorKey(l, gx, gy, stock, thin);
+  if (drawPaintedTile(ctx, key, x, y, ts + 0.5, 0)) return;
+  if (key === 'floor_corridor') {
+    ctx.fillStyle = '#0c2230';
+    ctx.fillRect(x, y, ts + 0.5, ts + 0.5);
+    ctx.strokeStyle = '#1f6f86';
+    ctx.lineWidth = Math.max(1, ts * 0.06);
+    ctx.strokeRect(x + 1, y + 1, ts - 2, ts - 2);
+  } else if (key === 'floor_stockpile') {
+    ctx.fillStyle = '#5a3322';
+    ctx.fillRect(x, y, ts + 0.5, ts + 0.5);
+    ctx.fillStyle = '#f2b400';
+    ctx.fillRect(x, y + ts * 0.82, ts, Math.max(1, ts * 0.08));
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(x, y + ts * 0.9, ts, Math.max(1, ts * 0.08));
+  } else {
+    ctx.drawImage(floorTex, x, y, ts + 0.5, ts + 0.5);
+  }
+}
+
+function paintWall(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  ts: number,
+  gx: number,
+  gy: number,
+  tileAt: (x: number, y: number) => string,
+): void {
+  if (drawCell(ctx, 'tiles', WALL_CELL[0], WALL_CELL[1], x, y, ts + 0.5)) return;
+  if (drawPaintedTile(ctx, 'wall', x, y, ts + 0.5, 0)) return;
+  ctx.fillStyle = '#7f8894';
+  ctx.fillRect(x, y, ts + 0.5, ts + 0.5);
+  const edge = Math.max(1, ts * 0.14);
+  ctx.fillStyle = '#b6bec8';
+  if (tileAt(gx, gy - 1) !== 'wall') ctx.fillRect(x, y, ts, edge);
+  if (tileAt(gx - 1, gy) !== 'wall') ctx.fillRect(x, y, edge, ts);
+  ctx.fillStyle = '#3e454e';
+  if (tileAt(gx, gy + 1) !== 'wall') ctx.fillRect(x, y + ts - edge, ts, edge);
+  if (tileAt(gx + 1, gy) !== 'wall') ctx.fillRect(x + ts - edge, y, edge, ts);
+}
+
+/** Закрытая дверь — целый люк. Открытая — створки с просветом в пол. */
+function paintDoor(ctx: CanvasRenderingContext2D, x: number, y: number, ts: number, open: boolean, vertical: boolean): void {
+  if (!open && drawCell(ctx, 'tiles', DOOR_CELL[0], DOOR_CELL[1], x, y, ts)) return;
+  if (!open && drawPaintedTile(ctx, 'door', x, y, ts, 0)) return;
+  const gap = open ? ts * 0.34 : ts * 0.02;
+  ctx.fillStyle = '#5c656e';
+  if (vertical) {
+    ctx.fillRect(x + ts * 0.22, y + ts * 0.08, ts * 0.56, ts / 2 - gap);
+    ctx.fillRect(x + ts * 0.22, y + ts / 2 + gap, ts * 0.56, ts / 2 - gap - ts * 0.08);
+  } else {
+    ctx.fillRect(x + ts * 0.08, y + ts * 0.22, ts / 2 - gap, ts * 0.56);
+    ctx.fillRect(x + ts / 2 + gap, y + ts * 0.22, ts / 2 - gap - ts * 0.08, ts * 0.56);
+  }
+  const band = Math.max(1, ts * 0.07);
+  ctx.fillStyle = '#f2b400';
+  ctx.fillRect(x, y, ts, band);
+  ctx.fillRect(x, y + ts - band, ts, band);
+  ctx.fillStyle = '#1a1a1a';
+  for (let i = 0; i < 6; i++) {
+    ctx.fillRect(x + (ts / 6) * i, y, ts / 12, band);
+    ctx.fillRect(x + (ts / 6) * i, y + ts - band, ts / 12, band);
+  }
+  ctx.fillStyle = '#ff8f00';
+  ctx.fillRect(x + ts * 0.12, y + ts * 0.14, Math.max(2, ts * 0.08), Math.max(2, ts * 0.08));
+  ctx.fillRect(x + ts * 0.8, y + ts * 0.14, Math.max(2, ts * 0.08), Math.max(2, ts * 0.08));
+}
+
+function drawStackLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, ts: number): void {
+  ctx.font = `${Math.max(8, ts * 0.22)}px system-ui`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const w = ctx.measureText(text).width + 6;
+  const h = Math.max(10, ts * 0.26);
+  ctx.fillStyle = 'rgba(6,22,30,0.88)';
+  ctx.fillRect(x - w / 2, y - h / 2, w, h);
+  ctx.fillStyle = '#d8f3f8';
+  ctx.fillText(text, x, y);
+}
+
+/** Запасная иконка стопки, если картинка ресурса не загрузилась. */
+function drawResourceMark(ctx: CanvasRenderingContext2D, resource: Physical, x: number, y: number, s: number): void {
+  ctx.save();
+  ctx.translate(x + s / 2, y + s / 2);
+  if (resource === 'metal') {
+    ctx.fillStyle = '#8d97a3';
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.32, -s * 0.05);
+    ctx.lineTo(s * 0.34, -s * 0.18);
+    ctx.lineTo(s * 0.34, s * 0.12);
+    ctx.lineTo(-s * 0.32, s * 0.22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#d7dde4';
+    ctx.fillRect(-s * 0.28, -s * 0.16, s * 0.5, s * 0.08);
+  } else if (resource === 'ice') {
+    ctx.fillStyle = '#b3e5fc';
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.32);
+    ctx.lineTo(s * 0.28, -s * 0.05);
+    ctx.lineTo(s * 0.12, s * 0.3);
+    ctx.lineTo(-s * 0.22, s * 0.18);
+    ctx.lineTo(-s * 0.28, -s * 0.08);
+    ctx.closePath();
+    ctx.fill();
+  } else if (resource === 'water') {
+    ctx.fillStyle = '#0277bd';
+    roundRect(ctx, -s * 0.22, -s * 0.3, s * 0.44, s * 0.6, s * 0.08);
+    ctx.fill();
+    ctx.fillStyle = '#4fc3f7';
+    ctx.fillRect(-s * 0.12, -s * 0.16, s * 0.24, s * 0.32);
+  } else if (resource === 'crystals') {
+    ctx.fillStyle = '#8e24aa';
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.34);
+    ctx.lineTo(s * 0.22, 0);
+    ctx.lineTo(0, s * 0.34);
+    ctx.lineTo(-s * 0.22, 0);
+    ctx.closePath();
+    ctx.fill();
+  } else if (resource === 'biomass') {
+    ctx.fillStyle = '#558b2f';
+    ctx.beginPath();
+    ctx.ellipse(0, s * 0.04, s * 0.28, s * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = '#e65100';
+    roundRect(ctx, -s * 0.26, -s * 0.18, s * 0.52, s * 0.36, s * 0.06);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 /** Цвета комнат для оверлея воздуха — как на скриншоте алгоритма поиска комнат из прототипа 2017 года. */
@@ -100,9 +278,9 @@ export function drawHull(ctx: CanvasRenderingContext2D, l: ParsedLayout, o: Hull
 
   // Обшивка.
   const g = ctx.createLinearGradient(0, top - pad, 0, bottom + pad);
-  g.addColorStop(0, o.own ? '#9aa3ad' : '#a1887f');
-  g.addColorStop(0.5, o.own ? '#5f6770' : '#6d4c41');
-  g.addColorStop(1, o.own ? '#3b4148' : '#3e2723');
+  g.addColorStop(0, o.own ? '#c9ccd1' : '#b0a8a4');
+  g.addColorStop(0.55, o.own ? '#7d868f' : '#6d4c41');
+  g.addColorStop(1, o.own ? '#3e454e' : '#3e2723');
   ctx.fillStyle = g;
   ctx.strokeStyle = '#15181c';
   ctx.lineWidth = Math.max(1, ts * 0.12);
@@ -131,6 +309,12 @@ export function drawHull(ctx: CanvasRenderingContext2D, l: ParsedLayout, o: Hull
   ctx.moveTo(left, bottom + pad * 0.55);
   ctx.lineTo(right, bottom + pad * 0.75);
   ctx.stroke();
+  ctx.strokeStyle = '#8e2b2b';
+  ctx.lineWidth = Math.max(1, ts * 0.1);
+  ctx.beginPath();
+  ctx.moveTo(left + pad * 0.4, (top + bottom) / 2);
+  ctx.lineTo(right - pad * 0.2, (top + bottom) / 2);
+  ctx.stroke();
 
   if (o.shieldFrac > 0.02) {
     const rx = (right - left) / 2 + pad * 2 + h * 0.2;
@@ -156,24 +340,20 @@ export function drawLayoutSimple(ctx: CanvasRenderingContext2D, l: ParsedLayout,
   ctx.translate(cx, cy);
   ctx.rotate(heading);
   ctx.translate((-l.w / 2) * ts, (-l.h / 2) * ts);
+  const thin = corridorRooms(l);
+  const tileAt = (x: number, y: number) => (x < 0 || y < 0 || x >= l.w || y >= l.h ? 'empty' : l.grid.tiles[y * l.w + x]);
   l.grid.tiles.forEach((tile, i) => {
     if (tile === 'empty') return;
     const gx = i % l.w;
     const gy = Math.floor(i / l.w);
     const x = gx * ts;
     const y = gy * ts;
-    if (tile === 'floor' || tile === 'door') {
-      const [fc, fr] = floorCell(gx, gy);
-      if (!drawCell(ctx, 'tiles', fc, fr, x, y, ts + 0.5)) {
-        ctx.fillStyle = '#2b2f37';
-        ctx.fillRect(x, y, ts + 0.5, ts + 0.5);
-      }
+    if (tile === 'floor' || tile === 'door') paintFloor(ctx, l, gx, gy, x, y, ts, null, thin);
+    if (tile === 'wall') paintWall(ctx, x, y, ts, gx, gy, tileAt);
+    if (tile === 'door') {
+      const vertical = tileAt(gx, gy - 1) === 'wall' || tileAt(gx, gy + 1) === 'wall';
+      paintDoor(ctx, x, y, ts, false, vertical);
     }
-    if (tile === 'wall' && !drawCell(ctx, 'tiles', WALL_CELL[0], WALL_CELL[1], x, y, ts + 0.5)) {
-      ctx.fillStyle = '#9ea7b3';
-      ctx.fillRect(x, y, ts + 0.5, ts + 0.5);
-    }
-    if (tile === 'door') drawCell(ctx, 'tiles', DOOR_CELL[0], DOOR_CELL[1], x, y, ts + 0.5);
   });
   if (ts >= 5) {
     for (const [type, x, y] of l.modules) {
@@ -197,14 +377,15 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
   const at = (x: number, y: number) => ({ x: ox + x * ts, y: oy + y * ts });
   const tileAt = (x: number, y: number) => (x < 0 || y < 0 || x >= l.w || y >= l.h ? 'empty' : l.grid.tiles[y * l.w + x]);
 
+  const stock = new Set(ship.stockpile);
+  const thin = corridorRooms(l);
   // Пол.
   l.grid.tiles.forEach((tile, i) => {
     if (tile !== 'floor' && tile !== 'door') return;
     const gx = i % l.w;
     const gy = Math.floor(i / l.w);
     const p = at(gx, gy);
-    const [fc, fr] = floorCell(gx, gy);
-    if (!drawCell(ctx, 'tiles', fc, fr, p.x, p.y, ts + 0.5)) ctx.drawImage(floorTex, p.x, p.y, ts + 0.5, ts + 0.5);
+    paintFloor(ctx, l, gx, gy, p.x, p.y, ts, stock, thin);
   });
 
   // Оверлей воздуха: каждая комната своим цветом, насыщенность — концентрация O₂.
@@ -221,29 +402,40 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
     });
   }
 
-  // Зона склада — жёлтая заливка по полу.
-  ctx.fillStyle = 'rgba(255, 213, 79, 0.28)';
-  for (const t of ship.stockpile) {
-    const p = at(t % l.w, Math.floor(t / l.w));
-    ctx.fillRect(p.x, p.y, ts + 0.5, ts + 0.5);
+  // Граница склада — жёлтая кромка, пол под ней остаётся тёмным.
+  ctx.strokeStyle = '#f2b400';
+  ctx.lineWidth = Math.max(1, ts * 0.07);
+  for (const tIdx of ship.stockpile) {
+    const x = tIdx % l.w;
+    const y = Math.floor(tIdx / l.w);
+    const p = at(x, y);
+    ctx.beginPath();
+    if (y === 0 || !stock.has(tIdx - l.w)) {
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + ts, p.y);
+    }
+    if (y === l.h - 1 || !stock.has(tIdx + l.w)) {
+      ctx.moveTo(p.x, p.y + ts);
+      ctx.lineTo(p.x + ts, p.y + ts);
+    }
+    if (x === 0 || !stock.has(tIdx - 1)) {
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x, p.y + ts);
+    }
+    if (x === l.w - 1 || !stock.has(tIdx + 1)) {
+      ctx.moveTo(p.x + ts, p.y);
+      ctx.lineTo(p.x + ts, p.y + ts);
+    }
+    ctx.stroke();
   }
 
-  // Стены: заливка + фаска, соединённые с соседями.
+  // Стены: стальная плита, а если картинки нет — фаска по палитре.
   l.grid.tiles.forEach((tile, i) => {
     if (tile !== 'wall') return;
     const x = i % l.w;
     const y = Math.floor(i / l.w);
     const p = at(x, y);
-    if (drawCell(ctx, 'tiles', WALL_CELL[0], WALL_CELL[1], p.x, p.y, ts + 0.5)) return;
-    ctx.fillStyle = '#7d8793';
-    ctx.fillRect(p.x, p.y, ts + 0.5, ts + 0.5);
-    ctx.fillStyle = '#a9b3be';
-    const edge = Math.max(1, ts * 0.14);
-    if (tileAt(x, y - 1) !== 'wall') ctx.fillRect(p.x, p.y, ts, edge);
-    if (tileAt(x - 1, y) !== 'wall') ctx.fillRect(p.x, p.y, edge, ts);
-    ctx.fillStyle = '#4b535d';
-    if (tileAt(x, y + 1) !== 'wall') ctx.fillRect(p.x, p.y + ts - edge, ts, edge);
-    if (tileAt(x + 1, y) !== 'wall') ctx.fillRect(p.x + ts - edge, p.y, edge, ts);
+    paintWall(ctx, p.x, p.y, ts, x, y, tileAt);
   });
 
   // Двери: открыты, если в проёме кто-то стоит.
@@ -255,18 +447,7 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
     const p = at(x, y);
     const open = crewTiles.has(`${x},${y}`);
     const vertical = tileAt(x, y - 1) === 'wall' || tileAt(x, y + 1) === 'wall';
-    if (!open && drawCell(ctx, 'tiles', DOOR_CELL[0], DOOR_CELL[1], p.x, p.y, ts)) return;
-    ctx.fillStyle = '#3a3f47';
-    ctx.fillRect(p.x, p.y, ts, ts);
-    ctx.fillStyle = '#ffb300';
-    const gap = open ? ts * 0.35 : 0.02 * ts;
-    if (vertical) {
-      ctx.fillRect(p.x + ts * 0.3, p.y, ts * 0.4, ts / 2 - gap);
-      ctx.fillRect(p.x + ts * 0.3, p.y + ts / 2 + gap, ts * 0.4, ts / 2 - gap);
-    } else {
-      ctx.fillRect(p.x, p.y + ts * 0.3, ts / 2 - gap, ts * 0.4);
-      ctx.fillRect(p.x + ts / 2 + gap, p.y + ts * 0.3, ts / 2 - gap, ts * 0.4);
-    }
+    paintDoor(ctx, p.x, p.y, ts, open, vertical);
   });
 
   // Модули.
@@ -308,42 +489,17 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
     ctx.fillRect(p.x + pw * 0.1, p.y + ph - Math.max(2, ts * 0.1), (pw * 0.8) * b.progress, Math.max(2, ts * 0.06));
   }
 
-  const STACK_COLOR: Record<string, string> = {
-    metal: '#b0bec5',
-    ice: '#e1f5fe',
-    water: '#29b6f6',
-    crystals: '#ce93d8',
-    biomass: '#9ccc65',
-    food: '#ffb74d',
-  };
   for (const s of ship.stacks) {
     const p = at(s.x, s.y);
     const icon = ts * 0.62;
-    if (drawStackArt(ctx, s.resource, p.x + (ts - icon) / 2, p.y + ts * 0.28, icon)) {
-      ctx.fillStyle = STACK_COLOR[s.resource] ?? '#fff';
-      ctx.fillRect(p.x + ts * 0.28, p.y + ts * 0.78, ts * 0.44, Math.max(2, ts * 0.08));
-      if (ts >= 18) {
-        ctx.fillStyle = '#eceff1';
-        ctx.font = `${Math.max(8, ts * 0.22)}px system-ui`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const label = s.amount >= 10 ? String(Math.round(s.amount)) : s.amount.toFixed(1);
-        ctx.fillText(label, p.x + ts * 0.5, p.y + ts * 0.22);
-      }
-      continue;
+    const ix = p.x + (ts - icon) / 2;
+    const iy = p.y + ts * 0.28;
+    if (!drawStackArt(ctx, s.resource, ix, iy, icon) && !drawPaintedItem(ctx, s.resource, ix, iy, icon)) {
+      drawResourceMark(ctx, s.resource, ix, iy, icon);
     }
-    const h = Math.max(ts * 0.16, ts * 0.42 * Math.min(1, s.amount / 75));
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(p.x + ts * 0.18, p.y + ts * 0.5, ts * 0.64, h);
-    ctx.fillStyle = STACK_COLOR[s.resource] ?? '#fff';
-    ctx.fillRect(p.x + ts * 0.2, p.y + ts * 0.52, ts * 0.6, Math.max(2, h - ts * 0.06));
-    if (ts >= 18) {
-      ctx.fillStyle = '#eceff1';
-      ctx.font = `${Math.max(8, ts * 0.22)}px system-ui`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+    if (ts >= 16) {
       const label = s.amount >= 10 ? String(Math.round(s.amount)) : s.amount.toFixed(1);
-      ctx.fillText(label, p.x + ts * 0.5, p.y + ts * 0.5 + h * 0.35);
+      drawStackLabel(ctx, label, p.x + ts * 0.5, p.y + ts * 0.18, ts);
     }
   }
   for (const key of ship.urgent) {
@@ -478,10 +634,9 @@ function drawLighting(ctx: CanvasRenderingContext2D, ship: OwnShipView, l: Parse
   ctx.drawImage(lightCanvas, ox, oy);
 }
 
-function hashColor(id: number): string {
-  const hues = [0, 25, 45, 200, 280, 320, 160, 15];
-  return `hsl(${hues[id % hues.length]}, 55%, 45%)`;
-}
+const SUITS = ['#1a3a5c', '#3e4a32', '#5c4033', '#37474f', '#4a2c2a'];
+const HAIR = ['#1a1a1a', '#8d6e63', '#e6c27a', '#3e2723', '#6d4c41'];
+const SKIN = ['#f1c27d', '#e0ac69', '#8d5524', '#c68642', '#ffdbac'];
 
 function drawCrew(
   ctx: CanvasRenderingContext2D,
@@ -514,7 +669,7 @@ function drawCrew(
   ctx.beginPath();
   ctx.ellipse(x, y + r * 0.9, r * 0.9, r * 0.35, 0, 0, Math.PI * 2);
   ctx.fill();
-  const dressed = drawPawn(ctx, c.id, c.robot, x, y + r * 0.15, pawn);
+  const dressed = drawPawn(ctx, c.id, c.robot, x, y + r * 0.15, pawn) || drawPaintedPawn(ctx, c.id, c.robot, x, y + r * 0.05, pawn);
   if (!dressed && c.robot) {
     ctx.fillStyle = '#90a4ae';
     roundRect(ctx, x - r * 0.8, y - r * 0.7, r * 1.6, r * 1.5, r * 0.3);
@@ -525,17 +680,18 @@ function drawCrew(
     ctx.fillRect(x - r * 0.4, y - r * 0.25, r * 0.25, r * 0.2);
     ctx.fillRect(x + r * 0.15, y - r * 0.25, r * 0.25, r * 0.2);
   } else if (!dressed) {
-    ctx.fillStyle = hashColor(c.id);
+    const n = Math.abs(c.id);
+    ctx.fillStyle = SUITS[n % SUITS.length];
     ctx.beginPath();
-    ctx.ellipse(x, y + r * 0.3, r * 0.85, r * 0.7, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, y + r * 0.42, r * 0.72, r * 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#f1c7a3';
+    ctx.fillStyle = SKIN[n % SKIN.length];
     ctx.beginPath();
-    ctx.arc(x, y - r * 0.35, r * 0.55, 0, Math.PI * 2);
+    ctx.arc(x, y - r * 0.22, r * 0.58, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#4e342e';
+    ctx.fillStyle = HAIR[n % HAIR.length];
     ctx.beginPath();
-    ctx.arc(x, y - r * 0.5, r * 0.55, Math.PI, Math.PI * 2);
+    ctx.arc(x, y - r * 0.38, r * 0.58, Math.PI * 1.05, Math.PI * 1.95);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -546,9 +702,13 @@ function drawCrew(
     ctx.fillStyle = c.health < 35 ? '#ff5252' : '#69f0ae';
     ctx.fillRect(x - r, y - r * 1.45, (r * 2 * c.health) / 100, Math.max(2, r * 0.2));
   }
-  if (c.carry && ts >= 12 && !drawStackArt(ctx, c.carry.resource, x + r * 0.2, y - r * 0.2, r * 0.9)) {
-    ctx.fillStyle = '#ffe082';
-    ctx.fillRect(x + r * 0.35, y - r * 0.15, r * 0.7, r * 0.5);
+  if (c.carry && ts >= 12) {
+    const icon = r * 0.9;
+    const ix = x + r * 0.15;
+    const iy = y - r * 0.35;
+    if (!drawStackArt(ctx, c.carry.resource, ix, iy, icon) && !drawPaintedItem(ctx, c.carry.resource, ix, iy, icon)) {
+      drawResourceMark(ctx, c.carry.resource, ix, iy, icon);
+    }
   }
   const icon =
     c.state === 'sleeping' ? 'z' : c.state === 'eating' ? '🍴' : c.state === 'cryo' ? '❄' : c.state === 'healing' ? '✚' : c.job === 'extinguish' ? '🔥' : c.job === 'haul' ? '▣' : c.job === 'pilot' ? '✈' : '';
