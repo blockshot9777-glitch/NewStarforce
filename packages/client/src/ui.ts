@@ -298,7 +298,7 @@ function renderTop(own: OwnShipView | null, systemId: number, population: number
     <div class="res-row">${res}</div>
     <div class="meters">
       ${meter('Корпус', own.hp, own.maxHp, '#ff7043')}
-      ${meter('Щит', own.shield, own.maxShield, '#b388ff')}
+      ${meter('Щит', own.shield, own.maxShield, '#4fc3f7')}
       ${meter('Кислород', own.oxygen, own.oxygenCap, '#4dd0e1', `${Math.round((own.oxygen / Math.max(1, own.oxygenCap)) * 100)}%`)}
       ${meter('Энергия', own.powerOutput, Math.max(own.powerOutput, own.powerDemand), deficit ? '#ff5252' : '#ffd740', `${own.powerOutput.toFixed(0)}/${own.powerDemand.toFixed(0)}`)}
       ${meter('Батарея', own.battery, own.batteryCap, '#c6ff00')}

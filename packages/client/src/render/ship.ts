@@ -277,14 +277,14 @@ export function drawHull(ctx: CanvasRenderingContext2D, l: ParsedLayout, o: Hull
     }
   }
 
-  // Обшивка.
+  // Обшивка: светло-серый металл, не тёмный градиент в тень.
   const g = ctx.createLinearGradient(0, top - pad, 0, bottom + pad);
-  g.addColorStop(0, o.own ? '#c9ccd1' : '#b0a8a4');
-  g.addColorStop(0.55, o.own ? '#7d868f' : '#6d4c41');
-  g.addColorStop(1, o.own ? '#3e454e' : '#3e2723');
+  g.addColorStop(0, o.own ? '#e4e7eb' : '#d0d3d8');
+  g.addColorStop(0.45, o.own ? '#c9ccd1' : '#b7bcc3');
+  g.addColorStop(1, o.own ? '#b5bac1' : '#a3a8b0');
   ctx.fillStyle = g;
-  ctx.strokeStyle = '#15181c';
-  ctx.lineWidth = Math.max(1, ts * 0.12);
+  ctx.strokeStyle = '#6a7078';
+  ctx.lineWidth = Math.max(1, ts * 0.1);
   ctx.beginPath();
   ctx.moveTo(left - pad, top - pad * 0.4);
   ctx.lineTo(right + pad * 0.3, top - pad);
@@ -294,27 +294,26 @@ export function drawHull(ctx: CanvasRenderingContext2D, l: ParsedLayout, o: Hull
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
-  // Гондолы двигателей.
-  ctx.fillStyle = o.own ? '#4a5058' : '#4e342e';
+  // Гондолы двигателей — тот же металл, чуть темнее борта.
+  ctx.fillStyle = o.own ? '#9aa1a9' : '#8b929a';
   for (const sy of [top - pad * 0.2, bottom - ts * 1.6 + pad * 0.2]) {
     roundRect(ctx, left - pad * 1.5, sy, pad * 1.4, ts * 1.6, ts * 0.3);
     ctx.fill();
     ctx.stroke();
   }
-  // Полосы на обшивке.
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-  ctx.lineWidth = Math.max(1, ts * 0.08);
-  ctx.beginPath();
-  ctx.moveTo(left, top - pad * 0.55);
-  ctx.lineTo(right, top - pad * 0.75);
-  ctx.moveTo(left, bottom + pad * 0.55);
-  ctx.lineTo(right, bottom + pad * 0.75);
-  ctx.stroke();
+  // Красные полосы на видимой кромке корпуса (интерьер рисуется поверх середины).
   ctx.strokeStyle = '#8e2b2b';
-  ctx.lineWidth = Math.max(1, ts * 0.1);
+  ctx.lineWidth = Math.max(2, ts * 0.16);
+  ctx.lineCap = 'butt';
+  const midY = (top + bottom) / 2;
   ctx.beginPath();
-  ctx.moveTo(left + pad * 0.4, (top + bottom) / 2);
-  ctx.lineTo(right - pad * 0.2, (top + bottom) / 2);
+  ctx.moveTo(left - pad * 0.55, top - pad * 0.22);
+  ctx.lineTo(right + pad * 0.05, top - pad * 0.7);
+  ctx.moveTo(left - pad * 0.55, bottom + pad * 0.22);
+  ctx.lineTo(right + pad * 0.05, bottom + pad * 0.7);
+  ctx.moveTo(right + pad * 0.2, midY - h * 0.12);
+  ctx.lineTo(right + pad + h * 0.16, midY);
+  ctx.lineTo(right + pad * 0.2, midY + h * 0.12);
   ctx.stroke();
 
   if (o.shieldFrac > 0.02) {
@@ -322,13 +321,13 @@ export function drawHull(ctx: CanvasRenderingContext2D, l: ParsedLayout, o: Hull
     const ry = h / 2 + pad * 2;
     const cx = (left + right) / 2 + h * 0.1;
     const sg = ctx.createRadialGradient(cx, 0, Math.min(rx, ry) * 0.6, cx, 0, Math.max(rx, ry));
-    sg.addColorStop(0, 'rgba(124,77,255,0)');
-    sg.addColorStop(1, `rgba(150,110,255,${0.12 + 0.25 * o.shieldFrac})`);
+    sg.addColorStop(0, 'rgba(79,195,247,0)');
+    sg.addColorStop(1, `rgba(41,182,246,${0.12 + 0.25 * o.shieldFrac})`);
     ctx.fillStyle = sg;
     ctx.beginPath();
     ctx.ellipse(cx, (top + bottom) / 2, rx, ry, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = `rgba(179,136,255,${0.25 + 0.4 * o.shieldFrac})`;
+    ctx.strokeStyle = `rgba(0,188,212,${0.35 + 0.4 * o.shieldFrac})`;
     ctx.lineWidth = Math.max(1, ts * 0.06);
     ctx.stroke();
   }

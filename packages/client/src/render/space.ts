@@ -498,7 +498,7 @@ function drawNpc(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'npc' }
   }
   ctx.restore();
   if (c.shield > 0) {
-    ctx.strokeStyle = 'rgba(179,136,255,0.5)';
+    ctx.strokeStyle = 'rgba(79,195,247,0.55)';
     ctx.beginPath();
     ctx.arc(p.x, p.y, r * 1.4, 0, Math.PI * 2);
     ctx.stroke();
@@ -526,7 +526,7 @@ function drawFx(ctx: CanvasRenderingContext2D, S: ToScreen, z: number): void {
       ctx.stroke();
     } else if (fx.k === 'hit') {
       const p = S(fx.x, fx.y);
-      ctx.fillStyle = fx.shield ? `rgba(179,136,255,${1 - age})` : `rgba(255,171,64,${1 - age})`;
+      ctx.fillStyle = fx.shield ? `rgba(79,195,247,${1 - age})` : `rgba(255,171,64,${1 - age})`;
       ctx.beginPath();
       ctx.arc(p.x, p.y, (4 + age * 12) * Math.max(0.5, z), 0, Math.PI * 2);
       ctx.fill();
