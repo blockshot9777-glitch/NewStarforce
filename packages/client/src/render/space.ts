@@ -11,6 +11,7 @@ import {
   type Resource,
 } from '@starforce/shared';
 import { interp, store, worldToScreen, type ParsedLayout } from '../store';
+import { NEBULA_SIZE, nebulaBlobs, tileOffset, wrappedCenters } from './nebula';
 import { drawHull, drawInterior, drawLayoutSimple, moduleWorld } from './ship';
 
 interface Star {
@@ -52,20 +53,17 @@ let nebulaSystem = -1;
 
 function makeNebula(systemId: number): HTMLCanvasElement {
   const c = document.createElement('canvas');
-  c.width = c.height = 1024;
+  c.width = c.height = NEBULA_SIZE;
   const g = c.getContext('2d')!;
-  const rnd = seeded(systemId * 31 + 5);
   const base = STAR_SYSTEMS[systemId]?.star ?? '#ffffff';
-  const tints = ['#3949ab', '#6a1b9a', '#00838f', base];
-  for (let i = 0; i < 28; i++) {
-    const x = rnd() * 1024;
-    const y = rnd() * 1024;
-    const r = 120 + rnd() * 320;
-    const grad = g.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, tints[i % tints.length] + '22');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 1024, 1024);
+  for (const blob of nebulaBlobs(systemId, base)) {
+    for (const p of wrappedCenters(blob.x, blob.y, blob.r, NEBULA_SIZE)) {
+      const grad = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, blob.r);
+      grad.addColorStop(0, `${blob.color}22`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, NEBULA_SIZE, NEBULA_SIZE);
+    }
   }
   return c;
 }
@@ -77,9 +75,16 @@ function drawBackground(ctx: CanvasRenderingContext2D, W: number, H: number, sys
     nebula = makeNebula(systemId);
     nebulaSystem = systemId;
   }
-  const nx = -((store.cam.x * 0.02) % 1024);
-  const ny = -((store.cam.y * 0.02) % 1024);
-  for (let x = nx - 1024; x < W; x += 1024) for (let y = ny - 1024; y < H; y += 1024) ctx.drawImage(nebula, x, y);
+  // Дробный сдвиг и сглаживание смешивают край тайла с пустотой и оставляют линию.
+  // Туманность кладётся целыми пикселями, без фильтрации.
+  const nx = Math.round(tileOffset(store.cam.x, 0.02, NEBULA_SIZE));
+  const ny = Math.round(tileOffset(store.cam.y, 0.02, NEBULA_SIZE));
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  for (let x = nx - NEBULA_SIZE; x < W; x += NEBULA_SIZE) {
+    for (let y = ny - NEBULA_SIZE; y < H; y += NEBULA_SIZE) ctx.drawImage(nebula, x, y);
+  }
+  ctx.restore();
   for (const layer of LAYERS) {
     const ox = -((((store.cam.x * layer.factor) % layer.size) + layer.size) % layer.size);
     const oy = -((((store.cam.y * layer.factor) % layer.size) + layer.size) % layer.size);
