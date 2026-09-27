@@ -1,5 +1,5 @@
 // Состояние мира на сервере. Только простые данные (без классов), чтобы всё легко сохранялось в JSON.
-import type { Biome, BuildKind, HullClass, ModuleType, NpcType, Resource, Resources, Tile } from './defs';
+import type { Biome, BuildKind, HullClass, ModuleType, NpcType, Physical, Resource, Resources, Tile } from './defs';
 
 export interface Vec {
   x: number;
@@ -33,18 +33,29 @@ export interface Blueprint {
   free: boolean;
   work: number;
   workTotal: number;
+  /** Сколько уже принесли к чертежу. Пока не хватает стоимости, стройка не начинается. */
+  delivered: Partial<Resources>;
 }
 
-export type JobKind = 'build' | 'harvest' | 'repair' | 'pilot' | 'extinguish' | 'cryo';
+/** Стопка одного ресурса на клетке корабля. */
+export interface ItemStack {
+  id: number;
+  x: number;
+  y: number;
+  resource: Physical;
+  amount: number;
+}
+
+export type JobKind = 'build' | 'harvest' | 'repair' | 'pilot' | 'extinguish' | 'haul' | 'cryo';
 
 /** 1 — берётся в первую очередь, 4 — в последнюю, 0 — эту работу не делает. */
 export type WorkPriority = 0 | 1 | 2 | 3 | 4;
 
-export const JOB_KINDS: readonly JobKind[] = ['extinguish', 'pilot', 'repair', 'harvest', 'build', 'cryo'];
+export const JOB_KINDS: readonly JobKind[] = ['extinguish', 'pilot', 'repair', 'haul', 'harvest', 'build', 'cryo'];
 
-/** Как сейчас устроен общий порядок: пожар, мостик, ремонт, урожай и стройка. */
+/** Как сейчас устроен общий порядок: пожар, мостик, ремонт, переноска, урожай и стройка. */
 export function defaultPriorities(): Record<JobKind, WorkPriority> {
-  return { extinguish: 1, pilot: 2, repair: 3, harvest: 4, build: 4, cryo: 1 };
+  return { extinguish: 1, pilot: 2, repair: 3, haul: 3, harvest: 4, build: 4, cryo: 1 };
 }
 
 export interface Job {
@@ -53,6 +64,8 @@ export interface Job {
   targetId: number;
   x: number;
   y: number;
+  /** Куда и сколько нести. blueprintId — чертёж, иначе клетка склада. */
+  haul?: { resource: Physical; amount: number; destX: number; destY: number; blueprintId: number | null };
 }
 
 export type CrewState = 'idle' | 'working' | 'eating' | 'sleeping' | 'healing' | 'cryo';
@@ -81,6 +94,8 @@ export interface Crew {
   priorities: Record<JobKind, WorkPriority>;
   state: CrewState;
   job: Job | null;
+  /** Что несёт в руках. Пока не положит — в складе этого нет. */
+  carry: { resource: Physical; amount: number } | null;
   timer: number;
 }
 
@@ -105,6 +120,10 @@ export interface Ship {
   layoutVersion: number;
   modules: ShipModule[];
   blueprints: Blueprint[];
+  /** Стопки на полу. В «запасе» корабля только то, что лежит в зоне склада. */
+  stacks: ItemStack[];
+  /** Индексы клеток зоны склада. */
+  stockpile: number[];
   crew: Crew[];
   /** Пожары: индекс клетки → интенсивность 0..1. */
   fires: Record<number, number>;

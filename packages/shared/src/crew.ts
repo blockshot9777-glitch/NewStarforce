@@ -1,11 +1,12 @@
 // ИИ экипажа в духе RimWorld: потребности → задачи → перемещение по сетке корабля.
 import { CREW_SPEED, EAT_RESTORE, EAT_SECONDS, FOOD_DECAY, HYDRO_YIELD, MODULES, REST_DECAY, ROBOT_SPEED_MULT, SUFFOCATE_BELOW, DARK_WORK_MULT } from './defs';
 import { findPath, isWalkable, neighbors4, tileAt } from './grid';
+import { dropCarry, dropLoose, materialsReady, planHaulJobs, removeStored, stepHaul } from './items';
 import { JOB_KINDS, defaultPriorities, type Crew, type Job, type JobKind, type Ship, type ShipModule, type Vec, type WorkPriority } from './state';
 import { airAt, blueprintAt, completeBlueprint, functional, isLit, moduleAt, walkableTiles, type ShipContext } from './ship';
 
-/** Запасной порядок, когда личные приоритеты совпали: пожар, мостик, ремонт, урожай, стройка. */
-const JOB_PRIORITY: JobKind[] = ['extinguish', 'pilot', 'repair', 'harvest', 'build'];
+/** Запасной порядок, когда личные приоритеты совпали: пожар, мостик, ремонт, переноска, урожай, стройка. */
+const JOB_PRIORITY: JobKind[] = ['extinguish', 'pilot', 'repair', 'haul', 'harvest', 'build'];
 
 function priorityOf(c: Crew, kind: JobKind): WorkPriority {
   const v = c.priorities?.[kind];
@@ -24,6 +25,7 @@ function jobRank(ship: Ship, c: Crew, j: Job, urgent: Set<string>): number | nul
   if (j.kind === 'extinguish') return 10 + p;
   const breach = j.kind === 'build' && !!ship.blueprints.find((b) => b.id === j.targetId)?.free;
   if (breach) return 20 + p;
+  if (j.kind === 'haul' && j.haul?.blueprintId != null) return 25 + p;
   return 30 + p * 10 + Math.max(0, JOB_PRIORITY.indexOf(j.kind));
 }
 
@@ -91,7 +93,10 @@ export function availableJobs(ship: Ship, ctx: Pick<ShipContext, 'wantsPilot'>):
     if (m.hp < MODULES[m.type].maxHp) jobs.push({ kind: 'repair', targetId: m.id, x: m.x, y: m.y });
     if (m.type === 'hydroponics' && m.growth >= 1 && m.hp > 0) jobs.push({ kind: 'harvest', targetId: m.id, x: m.x, y: m.y });
   }
-  for (const b of ship.blueprints) jobs.push({ kind: 'build', targetId: b.id, x: b.x, y: b.y });
+  for (const b of ship.blueprints) {
+    if (materialsReady(b)) jobs.push({ kind: 'build', targetId: b.id, x: b.x, y: b.y });
+  }
+  jobs.push(...planHaulJobs(ship));
   return jobs;
 }
 
@@ -110,7 +115,15 @@ function jobStillValid(ship: Ship, c: Crew, job: Job, ctx: ShipContext): boolean
     case 'repair':
       return ship.modules.some((m) => m.id === job.targetId && m.hp < MODULES[m.type].maxHp);
     case 'build':
-      return ship.blueprints.some((b) => b.id === job.targetId);
+      return ship.blueprints.some((b) => b.id === job.targetId && materialsReady(b));
+    case 'haul': {
+      if (!job.haul) return false;
+      if (c.carry) {
+        if (job.haul.blueprintId === null) return true;
+        return ship.blueprints.some((b) => b.id === job.haul!.blueprintId);
+      }
+      return ship.stacks.some((s) => s.id === job.targetId && s.amount > 1e-6);
+    }
     case 'extinguish':
       return ship.fires[job.targetId] !== undefined;
     case 'cryo': {
@@ -153,7 +166,8 @@ function goTo(ship: Ship, c: Crew, target: Vec): boolean {
   return true;
 }
 
-function releaseJob(c: Crew, reserved: Set<string>): void {
+function releaseJob(ship: Ship, c: Crew, reserved: Set<string>, nextId: () => number): void {
+  dropCarry(ship, c, nextId);
   if (c.job) reserved.delete(jobKey(c.job));
   c.job = null;
   c.path = [];
@@ -184,7 +198,7 @@ export function orderCryo(ship: Ship, crewId: number): string | null {
 }
 
 /** Поставить личный приоритет работы: 1 важнее всего, 4 — в конце, 0 — не делать. */
-export function setPriority(ship: Ship, crewId: number, kind: string, value: number): string | null {
+export function setPriority(ship: Ship, crewId: number, kind: string, value: number, nextId?: () => number): string | null {
   const c = ship.crew.find((o) => o.id === crewId);
   if (!c) return 'Нет такого члена экипажа на борту';
   if (!JOB_KINDS.includes(kind as JobKind)) return 'Нет такой работы';
@@ -192,6 +206,7 @@ export function setPriority(ship: Ship, crewId: number, kind: string, value: num
   if (!c.priorities) c.priorities = defaultPriorities();
   c.priorities[kind as JobKind] = value as WorkPriority;
   if (c.job?.kind === kind && value === 0 && kind !== 'cryo') {
+    if (c.carry && nextId) dropCarry(ship, c, nextId);
     c.job = null;
     c.path = [];
     if (c.state === 'working') c.state = 'idle';
@@ -228,12 +243,21 @@ export function updateCrew(ship: Ship, dt: number, ctx: ShipContext): void {
       if (!suffocating && c.food > 20) c.health = Math.min(100, c.health + 0.2 * dt);
     }
   }
-  for (const c of ship.crew.filter((o) => o.health <= 0)) ctx.log(`${c.name} погиб(ла) на борту.`, 'bad');
+  for (const c of ship.crew) {
+    if (c.health > 0) continue;
+    dropCarry(ship, c, ctx.nextId);
+    ctx.log(`${c.name} погиб(ла) на борту.`, 'bad');
+  }
   ship.crew = ship.crew.filter((c) => c.health > 0);
 
   const jobs = availableJobs(ship, ctx);
   const existing = new Set(jobs.map(jobKey));
-  ship.urgent = ship.urgent.filter((k) => existing.has(k));
+  ship.urgent = ship.urgent.filter((k) => {
+    if (existing.has(k)) return true;
+    if (!k.startsWith('build:')) return false;
+    const id = Number(k.slice('build:'.length));
+    return ship.blueprints.some((b) => b.id === id);
+  });
   const urgent = new Set(ship.urgent);
   const reserved = new Set(ship.crew.filter((c) => c.job).map((c) => jobKey(c.job!)));
   // Сколько человек можно сорвать с текущих дел ради важных задач, которые ещё никто не взял.
@@ -256,9 +280,9 @@ export function updateCrew(ship: Ship, dt: number, ctx: ShipContext): void {
     if (c.job) {
       const isCryo = c.job.kind === 'cryo';
       const forbidden = !isCryo && priorityOf(c, c.job.kind) === 0;
-      if (forbidden || (!isCryo && critical) || !jobStillValid(ship, c, c.job, ctx)) releaseJob(c, reserved);
+      if (forbidden || (!isCryo && critical) || !jobStillValid(ship, c, c.job, ctx)) releaseJob(ship, c, reserved, ctx.nextId);
       else if (preemptBudget > 0 && !isCryo && c.job.kind !== 'pilot' && !urgent.has(jobKey(c.job))) {
-        releaseJob(c, reserved);
+        releaseJob(ship, c, reserved, ctx.nextId);
         preemptBudget--;
       }
     }
@@ -319,7 +343,7 @@ export function updateCrew(ship: Ship, dt: number, ctx: ShipContext): void {
       if (!c.robot) {
         // 2. Еда.
         if (c.food < 35 && ship.res.food >= 1) {
-          ship.res.food -= 1;
+          removeStored(ship, 'food', 1);
           c.path = [];
           c.state = 'eating';
           c.timer = EAT_SECONDS;
@@ -394,7 +418,7 @@ export function updateCrew(ship: Ship, dt: number, ctx: ShipContext): void {
         c.timer += dt * workSpeed(ship, c, 'botany');
         if (c.timer >= 3) {
           m.growth = 0;
-          ship.res.food += Math.round(HYDRO_YIELD * (0.8 + c.skills.botany / 20));
+          dropLoose(ship, 'food', Math.round(HYDRO_YIELD * (0.8 + c.skills.botany / 20)), m.x, m.y, ctx.nextId);
           c.timer = 0;
           c.job = null;
           c.state = 'idle';
@@ -418,6 +442,19 @@ export function updateCrew(ship: Ship, dt: number, ctx: ShipContext): void {
           c.job = null;
           c.state = 'idle';
         }
+        break;
+      }
+      case 'haul': {
+        const result = stepHaul(ship, c.id, ctx.nextId);
+        if (result === 'moving') {
+          c.state = 'idle';
+          break;
+        }
+        if (result === 'drop') dropCarry(ship, c, ctx.nextId);
+        reserved.delete(jobKey(job));
+        c.job = null;
+        c.path = [];
+        c.state = 'idle';
         break;
       }
     }
@@ -444,6 +481,7 @@ export function placeCrewOnBoard(ship: Ship, c: Crew): void {
   c.y = spot?.y ?? 0;
   c.path = [];
   c.job = null;
+  c.carry = c.carry ?? null;
   c.state = 'idle';
   c.timer = 0;
   ship.crew.push(c);

@@ -1,8 +1,8 @@
 // Сообщения между клиентом и сервером. Клиент только просит — всё решает сервер.
-import type { Biome, BuildKind, HullClass, ModuleType, NpcType, Resource, Resources } from './defs';
+import type { Biome, BuildKind, HullClass, ModuleType, NpcType, Physical, Resource, Resources } from './defs';
 import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry, WorkPriority } from './state';
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export type Command =
   | { c: 'move'; x: number; y: number }
@@ -12,6 +12,7 @@ export type Command =
   | { c: 'build'; x: number; y: number; kind: BuildKind }
   | { c: 'remove'; x: number; y: number }
   | { c: 'urgent'; x: number; y: number }
+  | { c: 'stockpile'; x: number; y: number; on: boolean }
   | { c: 'toggle'; moduleId: number }
   | { c: 'cryo'; crewId: number }
   | { c: 'setPriority'; crewId: number; kind: JobKind; value: WorkPriority }
@@ -51,6 +52,8 @@ export interface CrewView {
   job: JobKind | null;
   skills: CrewSkills;
   priorities: Record<JobKind, WorkPriority>;
+  /** Что несёт в руках, иначе null. */
+  carry: { resource: Physical; amount: number } | null;
 }
 
 export interface ModuleView {
@@ -96,7 +99,10 @@ export interface OwnShipView {
   mineResource: Resource | null;
   res: Resources;
   modules: ModuleView[];
-  blueprints: { id: number; x: number; y: number; kind: BuildKind; remove: boolean; progress: number }[];
+  blueprints: { id: number; x: number; y: number; kind: BuildKind; remove: boolean; progress: number; ready: boolean }[];
+  /** Стопки на полу. В запасе корабля — только то, что лежит в зоне склада. */
+  stacks: { x: number; y: number; resource: Physical; amount: number }[];
+  stockpile: number[];
   crew: CrewView[];
   fires: [number, number][];
   urgent: string[];

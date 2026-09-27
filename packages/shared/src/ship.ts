@@ -22,6 +22,7 @@ import {
   SHIELD_REGEN_PER_GEN,
   STARTER_CREW,
   STARTER_GLYPHS,
+  PHYSICAL,
   STARTER_LAYOUT,
   STARTER_RESOURCES,
   WATER_RECYCLE_RATE,
@@ -36,6 +37,7 @@ import {
 } from './defs';
 import { computeRooms, stepAir, type RoomMap } from './air';
 import { inBounds, isWalkable, neighbors4, tileAt } from './grid';
+import { dropCarry, dropLoose, isPhysical, putInStockpile, refundDelivered, removeStored } from './items';
 import type { Rng } from './rng';
 import { defaultPriorities, type Crew, type LogEntry, type Ship, type ShipModule, type Vec } from './state';
 
@@ -70,6 +72,7 @@ export function randomCrew(rng: Rng, id: number, x: number, y: number): Crew {
     priorities: defaultPriorities(),
     state: 'idle',
     job: null,
+    carry: null,
     timer: 0,
   };
 }
@@ -137,6 +140,8 @@ export function createStarterShip(opts: {
     layoutVersion: 1,
     modules,
     blueprints: [],
+    stacks: [],
+    stockpile: [],
     crew: [],
     fires: {},
     urgent: [],
@@ -167,6 +172,17 @@ export function createStarterShip(opts: {
   recomputeStats(ship);
   ship.oxygen = ship.stats.oxygenCap;
   ship.shield = ship.stats.maxShield;
+  for (let y = 0; y < ship.h && ship.stockpile.length < 8; y++) {
+    for (let x = 0; x < ship.w && ship.stockpile.length < 8; x++) {
+      const tile = ship.tiles[y * ship.w + x];
+      if (tile !== 'floor' && tile !== 'door') continue;
+      if (ship.modules.some((m) => m.x === x && m.y === y)) continue;
+      ship.stockpile.push(y * ship.w + x);
+    }
+  }
+  for (const r of PHYSICAL) {
+    if (STARTER_RESOURCES[r] > 0) putInStockpile(ship, r, STARTER_RESOURCES[r], opts.nextId);
+  }
   return ship;
 }
 
@@ -174,8 +190,9 @@ export function createStarterShip(opts: {
  * Переносит корабль в более крупный корпус: вся постройка игрока копируется в центр новой сетки,
  * экипаж и ресурсы сохраняются.
  */
-export function upgradeHull(ship: Ship, next: HullClass): void {
+export function upgradeHull(ship: Ship, next: HullClass, nextId: () => number): void {
   const hull = HULLS[next];
+  const oldW = ship.w;
   const ox = Math.floor((hull.w - ship.w) / 2);
   const oy = Math.floor((hull.h - ship.h) / 2);
   const tiles: Tile[] = new Array(hull.w * hull.h).fill('empty');
@@ -201,6 +218,16 @@ export function upgradeHull(ship: Ship, next: HullClass): void {
     b.x += ox;
     b.y += oy;
   }
+  for (const c of ship.crew) dropCarry(ship, c, nextId);
+  for (const s of ship.stacks) {
+    s.x += ox;
+    s.y += oy;
+  }
+  ship.stockpile = ship.stockpile.map((t) => {
+    const x = (t % oldW) + ox;
+    const y = Math.floor(t / oldW) + oy;
+    return y * hull.w + x;
+  });
   for (const c of ship.crew) {
     c.x += ox;
     c.y += oy;
@@ -349,8 +376,7 @@ export function distributePower(ship: Ship, dt: number, ctx: ShipContext): void 
   ship.stats.powerDemand = demandTotal;
 }
 
-export function lifeSupport(ship: Ship, dt: number): void {
-  const res = ship.res;
+export function lifeSupport(ship: Ship, dt: number, nextId: () => number): void {
   const deltas = new Map<number, number>();
   for (const m of ship.modules) {
     if (!m.powered || !functional(m)) continue;
@@ -358,22 +384,22 @@ export function lifeSupport(ship: Ship, dt: number): void {
       case 'o2gen': {
         const water = O2_GEN_WATER * dt;
         const tile = m.y * ship.w + m.x;
-        if (res.water >= water && (ship.air[tile] ?? 0) < 1) {
-          res.water -= water;
+        if (ship.res.water + 1e-9 >= water && (ship.air[tile] ?? 0) < 1) {
+          removeStored(ship, 'water', water);
           deltas.set(tile, (deltas.get(tile) ?? 0) + O2_GEN_RATE * dt);
         }
         break;
       }
       case 'water_recycler': {
-        const amount = Math.min(res.ice, WATER_RECYCLE_RATE * dt);
-        res.ice -= amount;
-        res.water += amount;
+        const amount = Math.min(ship.res.ice, WATER_RECYCLE_RATE * dt);
+        const got = amount > 1e-9 ? removeStored(ship, 'ice', amount) : 0;
+        if (got > 1e-9) putInStockpile(ship, 'water', got, nextId);
         break;
       }
       case 'hydroponics': {
         const water = HYDRO_WATER * dt;
-        if (m.growth < 1 && res.water >= water) {
-          res.water -= water;
+        if (m.growth < 1 && ship.res.water + 1e-9 >= water) {
+          removeStored(ship, 'water', water);
           m.growth = Math.min(1, m.growth + dt / HYDRO_GROW_SECONDS);
         }
         break;
@@ -467,7 +493,7 @@ export function breachHull(ship: Ship, rng: Rng, blueprintId: number): { x: numb
   ship.air[p.y * ship.w + p.x] = 0;
   ship.layoutVersion++;
   const work = buildWork('wall');
-  ship.blueprints.push({ id: blueprintId, x: p.x, y: p.y, kind: 'wall', remove: false, free: true, work, workTotal: work });
+  ship.blueprints.push({ id: blueprintId, x: p.x, y: p.y, kind: 'wall', remove: false, free: true, work, workTotal: work, delivered: {} });
   recomputeStats(ship);
   return p;
 }
@@ -493,25 +519,22 @@ export function validateBuild(ship: Ship, x: number, y: number, kind: BuildKind)
     if (moduleAt(ship, x, y)) return 'Клетка занята модулем';
     if (tile === 'empty' && !hasNeighbor) return 'Должно примыкать к кораблю';
   }
-  if (!hasResources(ship.res, buildCost(kind))) return 'Не хватает ресурсов';
   return null;
 }
 
 export function placeBlueprint(ship: Ship, id: number, x: number, y: number, kind: BuildKind): string | null {
   const err = validateBuild(ship, x, y, kind);
   if (err) return err;
-  spend(ship.res, buildCost(kind));
   const work = buildWork(kind);
-  ship.blueprints.push({ id, x, y, kind, remove: false, free: false, work, workTotal: work });
+  ship.blueprints.push({ id, x, y, kind, remove: false, free: false, work, workTotal: work, delivered: {} });
   return null;
 }
 
-export function placeRemoval(ship: Ship, id: number, x: number, y: number): string | null {
+export function placeRemoval(ship: Ship, id: number, x: number, y: number, nextId: () => number): string | null {
   if (!inBounds(ship, x, y)) return 'Вне корпуса';
   const bp = blueprintAt(ship, x, y);
   if (bp) {
-    // Отмена чертежа возвращает ресурсы целиком.
-    if (!bp.remove && !bp.free) gain(ship.res, buildCost(bp.kind));
+    if (!bp.remove && !bp.free) refundDelivered(ship, bp, nextId);
     ship.blueprints = ship.blueprints.filter((b) => b !== bp);
     return null;
   }
@@ -521,8 +544,18 @@ export function placeRemoval(ship: Ship, id: number, x: number, y: number): stri
   if (!m && tile === 'floor' && ship.tiles.filter((t) => t !== 'empty').length <= 1) return 'Нельзя разобрать последний пол';
   const kind: BuildKind = m ? m.type : (tile as Exclude<Tile, 'empty'>);
   const work = buildWork(kind) / 2;
-  ship.blueprints.push({ id, x, y, kind, remove: true, free: false, work, workTotal: work });
+  ship.blueprints.push({ id, x, y, kind, remove: true, free: false, work, workTotal: work, delivered: {} });
   return null;
+}
+
+/** Половина стоимости разбора падает на пол, а не сразу в запас. */
+function scatter(ship: Ship, cost: Partial<Resources>, mult: number, x: number, y: number, nextId: () => number): void {
+  for (const [k, v] of Object.entries(cost)) {
+    const amount = (v ?? 0) * mult;
+    if (amount <= 1e-9) continue;
+    if (k === 'credits') ship.res.credits += amount;
+    else if (isPhysical(k)) dropLoose(ship, k, amount, x, y, nextId);
+  }
 }
 
 export function completeBlueprint(ship: Ship, bpId: number, ctx: ShipContext): void {
@@ -534,11 +567,11 @@ export function completeBlueprint(ship: Ship, bpId: number, ctx: ShipContext): v
     const m = moduleAt(ship, bp.x, bp.y);
     if (m) {
       ship.modules = ship.modules.filter((o) => o !== m);
-      gain(ship.res, MODULES[m.type].cost, 0.5);
+      scatter(ship, MODULES[m.type].cost, 0.5, bp.x, bp.y, ctx.nextId);
     } else {
       const tile = ship.tiles[idx];
       if (tile !== 'empty') {
-        gain(ship.res, buildCost(tile), 0.5);
+        scatter(ship, buildCost(tile), 0.5, bp.x, bp.y, ctx.nextId);
         ship.tiles[idx] = tile === 'floor' ? 'empty' : 'floor';
       }
     }
@@ -547,7 +580,7 @@ export function completeBlueprint(ship: Ship, bpId: number, ctx: ShipContext): v
       ship.modules.push(makeModule(ctx.nextId(), bp.kind, bp.x, bp.y));
       ctx.log(`Построен модуль: ${MODULES[bp.kind].name}`, 'good');
     } else if (!bp.free) {
-      gain(ship.res, buildCost(bp.kind));
+      refundDelivered(ship, bp, ctx.nextId);
     }
   } else {
     ship.tiles[idx] = bp.kind;

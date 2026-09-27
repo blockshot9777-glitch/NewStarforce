@@ -1,5 +1,5 @@
 import './style.css';
-import { buildCost, isModuleType, spend, validateBuild, type BuildKind, type Ship } from '@starforce/shared';
+import { isModuleType, validateBuild, type BuildKind, type Ship } from '@starforce/shared';
 import { connect, savedName, send } from './net';
 import { loadSprites } from './render/modules';
 import { drawMinimap, drawSpace, type SpaceRenderResult } from './render/space';
@@ -63,6 +63,7 @@ function applyTool(): void {
   for (const c of cells) {
     if (tool === 'remove') send({ c: 'remove', x: c.x, y: c.y });
     else if (tool === 'urgent') send({ c: 'urgent', x: c.x, y: c.y });
+    else if (tool === 'stockpile' || tool === 'unstockpile') send({ c: 'stockpile', x: c.x, y: c.y, on: tool === 'stockpile' });
     else send({ c: 'build', x: c.x, y: c.y, kind: tool });
   }
 }
@@ -72,25 +73,23 @@ function drawToolPreview(): void {
   if (!i || !store.tool || store.mode !== 'ship') return;
   const ship = pseudoShip();
   const cells = toolCells();
-  // Проверяем по очереди, «списывая» ресурсы, чтобы при протяжке было видно, на сколько хватит.
-  const res = ship ? { ...ship.res } : null;
+  const zone = store.tool === 'stockpile' || store.tool === 'unstockpile';
   for (const c of cells) {
     let ok = true;
-    if (ship && res && store.tool !== 'remove' && store.tool !== 'urgent') {
-      const err = validateBuild({ ...ship, res } as Ship, c.x, c.y, store.tool as BuildKind);
-      ok = !err;
-      if (ok) spend(res, buildCost(store.tool as BuildKind));
+    if (ship && !zone && store.tool !== 'remove' && store.tool !== 'urgent') {
+      ok = !validateBuild(ship, c.x, c.y, store.tool as BuildKind);
     }
     const x = i.ox + c.x * i.ts;
     const y = i.oy + c.y * i.ts;
-    ctx.fillStyle = store.tool === 'remove' ? 'rgba(255,82,82,0.3)' : ok ? 'rgba(105,240,174,0.3)' : 'rgba(255,82,82,0.35)';
+    const bad = store.tool === 'remove' || store.tool === 'unstockpile';
+    ctx.fillStyle = bad ? 'rgba(255,82,82,0.3)' : ok ? 'rgba(105,240,174,0.3)' : 'rgba(255,82,82,0.35)';
     ctx.fillRect(x, y, i.ts, i.ts);
-    ctx.strokeStyle = store.tool === 'remove' ? '#ff5252' : ok ? '#69f0ae' : '#ff5252';
+    ctx.strokeStyle = bad ? '#ff5252' : ok ? '#69f0ae' : '#ff5252';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x + 0.5, y + 0.5, i.ts - 1, i.ts - 1);
   }
   const h = store.hoverTile;
-  if (h && ship && store.tool !== 'remove' && store.tool !== 'urgent') {
+  if (h && ship && store.tool !== 'remove' && store.tool !== 'urgent' && store.tool !== 'stockpile' && store.tool !== 'unstockpile') {
     const err = validateBuild(ship, h.x, h.y, store.tool as BuildKind);
     const text = err ? `${kindName(store.tool as BuildKind)}: ${err}` : kindName(store.tool as BuildKind);
     ctx.font = '13px system-ui';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NPCS, STAR_SYSTEMS, TICK_RATE, World, newClientCache, shipRadius, systemDistance, type Ship } from '../src';
+import { NPCS, STAR_SYSTEMS, TICK_RATE, World, newClientCache, setStored, shipRadius, systemDistance, type Ship } from '../src';
 
 function stepSeconds(w: World, seconds: number) {
   for (let i = 0; i < seconds * TICK_RATE; i++) w.step();
@@ -203,7 +203,8 @@ describe('мир', () => {
   it('смена корпуса сохраняет постройку и экипаж', () => {
     const { w, p, ship } = newWorld();
     ship.res.credits = 1000;
-    ship.res.metal = 300;
+    let nid = 90000;
+    setStored(ship, 'metal', 300, () => nid++);
     const modules = ship.modules.length;
     expect(w.command(p.id, { c: 'upgrade' })).toBeNull();
     expect(ship.hull).toBe('frigate');
@@ -303,12 +304,40 @@ describe('мир', () => {
     for (const c of raw.ships[0].crew) delete c.priorities;
     const loaded = World.fromJSON(JSON.stringify(raw));
     const crew = loaded.state.ships[0].crew[0];
-    expect(crew.priorities).toEqual({ extinguish: 1, pilot: 2, repair: 3, harvest: 4, build: 4, cryo: 1 });
+    expect(crew.priorities).toEqual({ extinguish: 1, pilot: 2, repair: 3, haul: 3, harvest: 4, build: 4, cryo: 1 });
+  });
+
+  it('старое сохранение без стопок переносит запас на склад', () => {
+    const w = World.create(4);
+    w.join('A', 'tok');
+    const raw = JSON.parse(w.toJSON()) as { ships: { res: { metal: number }; stacks?: unknown; stockpile?: unknown }[] };
+    raw.ships[0].res.metal = 77;
+    raw.ships[0].stacks = [];
+    raw.ships[0].stockpile = [];
+    const loaded = World.fromJSON(JSON.stringify(raw));
+    const s = loaded.state.ships[0];
+    expect(s.res.metal).toBe(77);
+    expect(s.stockpile.length).toBeGreaterThan(0);
+    const metal = s.stacks.filter((st) => st.resource === 'metal').reduce((sum, st) => sum + st.amount, 0);
+    expect(metal).toBe(77);
+    expect(s.crew[0].carry).toBeNull();
+  });
+
+  it('зона склада включается и выключается', () => {
+    const { w, p, ship } = newWorld();
+    const t = ship.stockpile[0];
+    const x = t % ship.w;
+    const y = Math.floor(t / ship.w);
+    expect(w.command(p.id, { c: 'stockpile', x, y, on: false })).toBeNull();
+    expect(ship.stockpile.includes(t)).toBe(false);
+    expect(w.command(p.id, { c: 'stockpile', x, y, on: true })).toBeNull();
+    expect(ship.stockpile.includes(t)).toBe(true);
+    expect(w.command(p.id, { c: 'stockpile', x: -1, y: 0, on: true })).toMatch(/корпуса/);
   });
 
   it('мусорные команды не роняют сервер', () => {
     const { w, p } = newWorld();
-    const junk: unknown[] = [null, 5, 'x', {}, { c: 1 }, { c: 'move', x: 'a' }, { c: 'build', x: 1.5, y: 2, kind: 'floor' }, { c: 'build', x: 1, y: 1, kind: '__proto__' }, { c: 'target', id: {} }, { c: 'jump', systemId: 99 }, { c: 'nope' }, { c: 'setPriority', crewId: 1.5, kind: 'build', value: 1 }, { c: 'setPriority', crewId: 1, kind: 5, value: 1 }];
+    const junk: unknown[] = [null, 5, 'x', {}, { c: 1 }, { c: 'move', x: 'a' }, { c: 'build', x: 1.5, y: 2, kind: 'floor' }, { c: 'build', x: 1, y: 1, kind: '__proto__' }, { c: 'target', id: {} }, { c: 'jump', systemId: 99 }, { c: 'nope' }, { c: 'setPriority', crewId: 1.5, kind: 'build', value: 1 }, { c: 'setPriority', crewId: 1, kind: 5, value: 1 }, { c: 'stockpile', x: 1.5, y: 0, on: true }];
     for (const j of junk) expect(typeof w.command(p.id, j)).toBe('string');
     stepSeconds(w, 1);
   });

@@ -50,13 +50,13 @@ import {
   type WeaponDef,
 } from './defs';
 import { isPiloted, normalizePriorities, orderCryo, placeCrewOnBoard, setPriority, toggleUrgent, updateCrew } from './crew';
+import { dropCarry, giveShip, materialsReady, normalizeStorage, putInStockpile, removeStored, syncStored, takeShip } from './items';
 import type { Command, Contact, LayoutView, OwnShipView, Snapshot } from './protocol';
 import { Rng } from './rng';
 import {
   createStarterShip,
   distributePower,
   functional,
-  gain,
   hasResources,
   igniteTile,
   lifeSupport,
@@ -67,7 +67,6 @@ import {
   randomCrew,
   recomputeStats,
   shipRooms,
-  spend,
   updateFires,
   upgradeHull,
   walkableTiles,
@@ -186,8 +185,16 @@ export class World {
   static fromJSON(json: string): World {
     const state = JSON.parse(json) as WorldState;
     for (const sys of state.systems) sys.fx = [];
-    for (const ship of state.ships) for (const c of ship.crew) normalizePriorities(c);
-    for (const e of state.expeditions) for (const c of e.crew) normalizePriorities(c);
+    for (const ship of state.ships) {
+      normalizeStorage(ship, () => state.nextId++);
+      for (const c of ship.crew) normalizePriorities(c);
+    }
+    for (const e of state.expeditions) {
+      for (const c of e.crew) {
+        normalizePriorities(c);
+        if (c.carry === undefined) c.carry = null;
+      }
+    }
     return new World(state);
   }
 
@@ -481,8 +488,9 @@ export class World {
       solar: solarFactor(Math.hypot(ship.x, ship.y)),
     };
 
+    syncStored(ship);
     distributePower(ship, dt, ctx);
-    lifeSupport(ship, dt);
+    lifeSupport(ship, dt, this.nextId);
     updateFires(ship, dt, this.rng);
     updateCrew(ship, dt, ctx);
     ship.stats.piloted = isPiloted(ship);
@@ -539,7 +547,7 @@ export class World {
       const d = dist(loot, ship);
       if (d > TRACTOR_RANGE) continue;
       if (d < r * 0.6) {
-        gain(ship.res, loot.res);
+        giveShip(ship, loot.res, this.nextId);
         sys.loot = sys.loot.filter((l) => l !== loot);
         const total = Object.values(loot.res).reduce((s, v) => s + (v ?? 0), 0);
         if (total >= 10 || (loot.res.credits ?? 0) > 0) this.log(owner, `Подобран груз: ${formatLoot(loot.res)}`, 'good');
@@ -673,7 +681,7 @@ export class World {
       ship.lastCombatTick = this.state.tick;
       if (t.k === 'ship') t.ship.lastCombatTick = this.state.tick;
       if (w.projectileSpeed) {
-        if (w.ammo) spend(ship.res, w.ammo);
+        if (w.ammo) takeShip(ship, w.ammo);
         const d = dist(origin, t) || 1;
         sys.projectiles.push({
           id: this.nextId(),
@@ -977,7 +985,7 @@ export class World {
       // Команда ждёт на поверхности, пока корабль не вернётся в систему.
       if (ship.systemId !== e.systemId) continue;
       for (const c of e.crew) placeCrewOnBoard(ship, c);
-      gain(ship.res, e.loot);
+      giveShip(ship, e.loot, this.nextId);
       this.state.expeditions = this.state.expeditions.filter((x) => x !== e);
       this.log(owner, `Экспедиция вернулась с ${planet.name}. Добыто: ${formatLoot(e.loot) || 'ничего'}.`, 'good');
     }
@@ -1000,6 +1008,7 @@ export class World {
     }
     const ship = this.shipOf(player);
     if (!ship) return 'Корабля нет — ждите нового';
+    syncStored(ship);
     const sys = this.state.systems[ship.systemId];
     switch (cmd.c) {
       case 'move':
@@ -1009,7 +1018,7 @@ export class World {
       case 'stop':
         ship.moveTarget = null;
         if (ship.jump) {
-          gain(ship.res, JUMP_FUEL);
+          giveShip(ship, JUMP_FUEL, this.nextId);
           ship.jump = null;
           this.log(player, 'Гиперпрыжок отменён.', 'info');
         }
@@ -1036,7 +1045,7 @@ export class World {
         return placeBlueprint(ship, this.nextId(), cmd.x, cmd.y, cmd.kind as BuildKind);
       case 'remove':
         if (!isInt(cmd.x) || !isInt(cmd.y)) return 'Некорректная клетка';
-        return placeRemoval(ship, this.nextId(), cmd.x, cmd.y);
+        return placeRemoval(ship, this.nextId(), cmd.x, cmd.y, this.nextId);
       case 'urgent':
         if (!isInt(cmd.x) || !isInt(cmd.y) || cmd.x < 0 || cmd.y < 0 || cmd.x >= ship.w || cmd.y >= ship.h) return 'Некорректная клетка';
         return toggleUrgent(ship, cmd.x, cmd.y);
@@ -1052,7 +1061,7 @@ export class World {
         return orderCryo(ship, cmd.crewId);
       case 'setPriority':
         if (!isInt(cmd.crewId) || typeof cmd.kind !== 'string' || !isInt(cmd.value)) return 'Некорректный приоритет';
-        return setPriority(ship, cmd.crewId, cmd.kind, cmd.value);
+        return setPriority(ship, cmd.crewId, cmd.kind, cmd.value, this.nextId);
       case 'expedition':
         return this.startExpedition(player, ship, cmd.planetId, cmd.crewIds);
       case 'recall': {
@@ -1080,8 +1089,8 @@ export class World {
         if (!next) return 'Это уже самый большой корпус';
         const cost = HULLS[next].cost!;
         if (!hasResources(ship.res, cost)) return `Нужно: ${formatLoot(cost)}`;
-        spend(ship.res, cost);
-        upgradeHull(ship, next);
+        if (!takeShip(ship, cost)) return `Нужно: ${formatLoot(cost)}`;
+        upgradeHull(ship, next, this.nextId);
         this.log(player, `Корабль перестроен в класс «${HULLS[next].name}». Вся ваша постройка сохранена.`, 'good');
         return null;
       }
@@ -1104,9 +1113,21 @@ export class World {
         const d = systemDistance(ship.systemId, cmd.systemId);
         if (d > range) return `Слишком далеко: ${d.toFixed(1)} св. лет, дальность ${range.toFixed(1)}`;
         if (!hasResources(ship.res, JUMP_FUEL)) return `Нужно топливо: ${formatLoot(JUMP_FUEL)}`;
-        spend(ship.res, JUMP_FUEL);
+        if (!takeShip(ship, JUMP_FUEL)) return `Нужно топливо: ${formatLoot(JUMP_FUEL)}`;
         ship.jump = { systemId: cmd.systemId, timeLeft: JUMP_CHARGE_SECONDS };
         this.log(player, `Зарядка гиперпрыжка в «${STAR_SYSTEMS[cmd.systemId].name}»… Нужны пилот и работающий двигатель.`, 'info');
+        return null;
+      }
+      case 'stockpile': {
+        if (!isInt(cmd.x) || !isInt(cmd.y) || typeof cmd.on !== 'boolean') return 'Некорректная зона склада';
+        if (cmd.x < 0 || cmd.y < 0 || cmd.x >= ship.w || cmd.y >= ship.h) return 'Вне корпуса';
+        const tile = ship.tiles[cmd.y * ship.w + cmd.x];
+        if (tile !== 'floor' && tile !== 'door') return 'Склад только на полу';
+        const idx = cmd.y * ship.w + cmd.x;
+        const has = ship.stockpile.includes(idx);
+        if (cmd.on && !has) ship.stockpile.push(idx);
+        if (!cmd.on && has) ship.stockpile = ship.stockpile.filter((t) => t !== idx);
+        syncStored(ship);
         return null;
       }
       default:
@@ -1125,12 +1146,13 @@ export class World {
     const crew = ship.crew.filter((c) => crewIds.includes(c.id) && c.state !== 'cryo');
     if (crew.length !== new Set(crewIds).size) return 'Кого-то из выбранных нет на борту (или спит в криокапсуле)';
     if (crew.length >= ship.crew.filter((c) => c.state !== 'cryo').length) return 'Кто-то должен остаться на борту';
-    ship.crew = ship.crew.filter((c) => !crew.includes(c));
     for (const c of crew) {
+      dropCarry(ship, c, this.nextId);
       c.job = null;
       c.path = [];
       c.state = 'idle';
     }
+    ship.crew = ship.crew.filter((c) => !crew.includes(c));
     this.state.expeditions.push({
       id: this.nextId(),
       shipId: ship.id,
@@ -1158,12 +1180,12 @@ export class World {
       if ((market.stock[r] ?? 0) < amount) return 'На складе столько нет';
       if (ship.res.credits < cost) return `Нужно ${cost} кредитов`;
       ship.res.credits -= cost;
-      ship.res[r] += amount;
+      putInStockpile(ship, r, amount, this.nextId);
       market.stock[r] = (market.stock[r] ?? 0) - amount;
     } else {
       const qty = -amount;
       if (ship.res[r] < qty) return 'У вас столько нет';
-      ship.res[r] -= qty;
+      removeStored(ship, r, qty);
       ship.res.credits += Math.floor(price * qty);
       market.stock[r] = (market.stock[r] ?? 0) + qty;
     }
@@ -1234,7 +1256,15 @@ export class World {
         kind: b.kind,
         remove: b.remove,
         progress: 1 - b.work / b.workTotal,
+        ready: materialsReady(b),
       })),
+      stacks: ship.stacks.map((s) => ({
+        x: s.x,
+        y: s.y,
+        resource: s.resource,
+        amount: Math.round(s.amount * 100) / 100,
+      })),
+      stockpile: [...ship.stockpile],
       crew: ship.crew.map((c) => ({
         id: c.id,
         name: c.name,
@@ -1248,6 +1278,7 @@ export class World {
         job: c.job?.kind ?? null,
         skills: c.skills,
         priorities: { ...c.priorities },
+        carry: c.carry ? { resource: c.carry.resource, amount: Math.round(c.carry.amount * 100) / 100 } : null,
       })),
       fires: Object.entries(ship.fires).map(([t, v]) => [Number(t), r2(v)]),
       urgent: [...ship.urgent],

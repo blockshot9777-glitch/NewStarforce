@@ -14,7 +14,7 @@ import {
 } from '@starforce/shared';
 
 export type Mode = 'ship' | 'system';
-export type Tool = BuildKind | 'remove' | 'urgent' | null;
+export type Tool = BuildKind | 'remove' | 'urgent' | 'stockpile' | 'unstockpile' | null;
 
 export interface ParsedLayout extends LayoutView {
   grid: { w: number; h: number; tiles: Tile[] };

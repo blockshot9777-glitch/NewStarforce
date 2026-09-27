@@ -15,6 +15,15 @@ export const RESOURCES = ['metal', 'ice', 'water', 'crystals', 'biomass', 'food'
 export type Resource = (typeof RESOURCES)[number];
 export type Resources = Record<Resource, number>;
 
+/** Всё, кроме кредитов, лежит стопками на полу и переносится руками. */
+export const PHYSICAL = ['metal', 'ice', 'water', 'crystals', 'biomass', 'food'] as const;
+export type Physical = (typeof PHYSICAL)[number];
+
+/** Сколько одного ресурса влезает в стопку на клетке. */
+export const STACK_MAX = 75;
+/** Сколько человек уносит за один заход. */
+export const CARRY_MAX = 35;
+
 export const RESOURCE_NAMES: Record<Resource, string> = {
   metal: 'Металл',
   ice: 'Лёд',

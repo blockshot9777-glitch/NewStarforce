@@ -4,6 +4,7 @@ export * from './state';
 export * from './grid';
 export * from './air';
 export * from './ship';
+export * from './items';
 export * from './crew';
 export * from './protocol';
 export * from './world';

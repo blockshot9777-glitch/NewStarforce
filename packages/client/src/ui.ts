@@ -76,12 +76,14 @@ const JOB_NAMES: Record<string, string> = {
   pilot: 'пилотирует',
   extinguish: 'тушит пожар',
   cryo: 'идёт в капсулу',
+  haul: 'несёт',
 };
 
 const PRIORITY_COLUMNS: { kind: JobKind; name: string }[] = [
   { kind: 'extinguish', name: 'Пожар' },
   { kind: 'pilot', name: 'Мостик' },
   { kind: 'repair', name: 'Ремонт' },
+  { kind: 'haul', name: 'Перенос' },
   { kind: 'harvest', name: 'Урожай' },
   { kind: 'build', name: 'Стройка' },
 ];
@@ -139,7 +141,7 @@ function handleAction(el: HTMLElement): void {
       if (store.buildCategory !== 'orders') break;
       break;
     case 'tool':
-      store.tool = store.tool === el.dataset.kind ? null : (el.dataset.kind as BuildKind | 'remove' | 'urgent');
+      store.tool = store.tool === el.dataset.kind ? null : (el.dataset.kind as BuildKind | 'remove' | 'urgent' | 'stockpile' | 'unstockpile');
       break;
     case 'air':
       store.airOverlay = !store.airOverlay;
@@ -332,8 +334,10 @@ function renderBuild(own: OwnShipView | null): void {
   let items: string;
   if (store.buildCategory === 'orders') {
     items = [
-      ['remove', '⛏', 'Разобрать', 'Снести постройку (вернётся половина ресурсов) или отменить чертёж'],
+      ['remove', '⛏', 'Разобрать', 'Снести постройку (половина ресурсов упадёт на пол) или отменить чертёж'],
       ['urgent', '❗', 'Важно', 'Пометить задачу на клетке как важную — экипаж возьмётся за неё сразу'],
+      ['stockpile', '▦', 'Склад', 'Зона, куда носят ресурсы. В запасе корабля только то, что лежит здесь'],
+      ['unstockpile', '▢', 'Убрать склад', 'Снять зону склада с клеток'],
     ]
       .map(
         ([k, icon, name, desc]) =>

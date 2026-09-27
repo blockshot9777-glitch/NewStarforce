@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   MODULES,
   Rng,
+  buildCost,
+  setStored,
   airAt,
   availableJobs,
   breachHull,
@@ -50,7 +52,7 @@ function run(ship: Ship, ctx: ShipContext, seconds: number) {
   const dt = 0.1;
   for (let i = 0; i < seconds * 10; i++) {
     distributePower(ship, dt, ctx);
-    lifeSupport(ship, dt);
+    lifeSupport(ship, dt, ctx.nextId);
     updateFires(ship, dt, ctx.rng);
     updateCrew(ship, dt, ctx);
   }
@@ -106,7 +108,7 @@ describe('комнаты и воздух', () => {
     const before = ship.air[room.tiles[0]];
     ship.crew = [];
     distributePower(ship, 0.1, ctx);
-    for (let i = 0; i < 30; i++) lifeSupport(ship, 0.1);
+    for (let i = 0; i < 30; i++) lifeSupport(ship, 0.1, nextId);
     expect(ship.air[room.tiles[0]]).toBeLessThan(before * 0.3);
   });
 
@@ -134,8 +136,8 @@ describe('жизнь на борту', () => {
   });
 
   it('гидропоника растёт, экипаж собирает урожай', () => {
-    const { ship, ctx } = setup();
-    ship.res.food = 0;
+    const { ship, ctx, nextId } = setup();
+    setStored(ship, 'food', 0, nextId);
     for (const c of ship.crew) c.food = 100;
     run(ship, ctx, 150);
     expect(ship.res.food).toBeGreaterThan(0);
@@ -143,7 +145,7 @@ describe('жизнь на борту', () => {
 
   it('без еды экипаж голодает, а робот — нет', () => {
     const { ship, ctx, rng, nextId } = setup();
-    ship.res.food = 0;
+    setStored(ship, 'food', 0, nextId);
     ship.modules = ship.modules.filter((m) => m.type !== 'hydroponics');
     ship.crew.push(makeRobot(rng, nextId(), 3, 3));
     run(ship, ctx, 600);
@@ -156,16 +158,18 @@ describe('жизнь на борту', () => {
 });
 
 describe('строительство', () => {
-  it('чертёж списывает ресурсы, экипаж строит модуль', () => {
-    const { ship, ctx } = setup();
-    ship.res.metal = 100;
+  it('чертёж ждёт доставку, потом экипаж строит модуль', () => {
+    const { ship, ctx, nextId } = setup();
+    setStored(ship, 'metal', 100, nextId);
     const spot = { x: 7, y: 3 };
     expect(validateBuild(ship, spot.x, spot.y, 'lamp')).toBeNull();
     expect(placeBlueprint(ship, 5000, spot.x, spot.y, 'lamp')).toBeNull();
-    expect(ship.res.metal).toBe(100 - MODULES.lamp.cost.metal!);
-    run(ship, ctx, 30);
+    expect(ship.res.metal).toBe(100);
+    expect(ship.blueprints[0].delivered.metal ?? 0).toBe(0);
+    run(ship, ctx, 45);
     expect(ship.modules.some((m) => m.type === 'lamp' && m.x === spot.x && m.y === spot.y)).toBe(true);
     expect(ship.blueprints.length).toBe(0);
+    expect(ship.res.metal).toBe(100 - MODULES.lamp.cost.metal!);
   });
 
   it('турель ставится только у внешней стены', () => {
@@ -179,12 +183,18 @@ describe('строительство', () => {
     expect(validateBuild(ship, 7, 6, 'laser')).toBeNull();
   });
 
-  it('нехватка ресурсов и занятая клетка отклоняются', () => {
-    const { ship } = setup();
-    ship.res.metal = 0;
-    expect(validateBuild(ship, 7, 3, 'lamp')).toMatch(/ресурс/);
+  it('чертёж без металла ждёт, занятая клетка отклоняется', () => {
+    const { ship, ctx, nextId } = setup();
+    setStored(ship, 'metal', 0, nextId);
+    expect(validateBuild(ship, 7, 3, 'lamp')).toBeNull();
+    expect(placeBlueprint(ship, 5000, 7, 3, 'lamp')).toBeNull();
+    run(ship, ctx, 10);
+    expect(ship.blueprints.some((b) => b.id === 5000)).toBe(true);
+    expect(ship.modules.some((m) => m.type === 'lamp' && m.x === 7 && m.y === 3)).toBe(false);
+    setStored(ship, 'metal', 100, nextId);
+    run(ship, ctx, 45);
+    expect(ship.modules.some((m) => m.type === 'lamp' && m.x === 7 && m.y === 3)).toBe(true);
     const m = ship.modules[0];
-    ship.res.metal = 100;
     expect(validateBuild(ship, m.x, m.y, 'lamp')).toMatch(/занята/);
   });
 });
@@ -228,8 +238,8 @@ describe('криокапсулы и важные задачи', () => {
     const { ship, ctx } = setup();
     const hydro = findModule(ship, 'hydroponics');
     hydro.growth = 1;
-    ship.res.metal = 100;
     expect(placeBlueprint(ship, 5000, 7, 3, 'lamp')).toBeNull();
+    ship.blueprints.find((b) => b.id === 5000)!.delivered = { ...buildCost('lamp') };
     for (const c of ship.crew) {
       c.food = 100;
       c.rest = 100;
@@ -259,8 +269,10 @@ describe('криокапсулы и важные задачи', () => {
     ship.res.metal = 500;
     ship.res.crystals = 100;
     placeBlueprint(ship, 5001, 7, 6, 'laser');
+    ship.blueprints.find((b) => b.id === 5001)!.delivered = { ...buildCost('laser') };
     run(ship, ctx, 1);
     placeBlueprint(ship, 5002, 11, 6, 'lamp');
+    ship.blueprints.find((b) => b.id === 5002)!.delivered = { ...buildCost('lamp') };
     expect(toggleUrgent(ship, 11, 6)).toBeNull();
     run(ship, ctx, 1);
     expect(ship.crew.some((c) => c.job?.kind === 'build' && c.job.targetId === 5002)).toBe(true);

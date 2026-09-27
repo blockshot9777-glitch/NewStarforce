@@ -205,6 +205,13 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
     });
   }
 
+  // Зона склада — жёлтая заливка по полу.
+  ctx.fillStyle = 'rgba(255, 213, 79, 0.28)';
+  for (const t of ship.stockpile) {
+    const p = at(t % l.w, Math.floor(t / l.w));
+    ctx.fillRect(p.x, p.y, ts + 0.5, ts + 0.5);
+  }
+
   // Стены: заливка + фаска, соединённые с соседями.
   l.grid.tiles.forEach((tile, i) => {
     if (tile !== 'wall') return;
@@ -263,7 +270,7 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
       ctx.lineTo(p.x + ts * 0.2, p.y + ts * 0.8);
       ctx.stroke();
     } else {
-      ctx.globalAlpha = 0.45;
+      ctx.globalAlpha = b.ready ? 0.55 : 0.22;
       if (isModuleType(b.kind)) drawModule(ctx, b.kind as ModuleType, p.x, p.y, ts, { powered: true, active: false, growth: 0, hpFrac: 1, enabled: true }, t);
       else {
         ctx.fillStyle = b.kind === 'wall' ? '#90caf9' : b.kind === 'door' ? '#ffe082' : '#80deea';
@@ -278,6 +285,31 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
     }
     ctx.fillStyle = '#40c4ff';
     ctx.fillRect(p.x + ts * 0.1, p.y + ts * 0.9, ts * 0.8 * b.progress, Math.max(2, ts * 0.06));
+  }
+
+  const STACK_COLOR: Record<string, string> = {
+    metal: '#b0bec5',
+    ice: '#e1f5fe',
+    water: '#29b6f6',
+    crystals: '#ce93d8',
+    biomass: '#9ccc65',
+    food: '#ffb74d',
+  };
+  for (const s of ship.stacks) {
+    const p = at(s.x, s.y);
+    const h = Math.max(ts * 0.16, ts * 0.42 * Math.min(1, s.amount / 75));
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(p.x + ts * 0.18, p.y + ts * 0.5, ts * 0.64, h);
+    ctx.fillStyle = STACK_COLOR[s.resource] ?? '#fff';
+    ctx.fillRect(p.x + ts * 0.2, p.y + ts * 0.52, ts * 0.6, Math.max(2, h - ts * 0.06));
+    if (ts >= 18) {
+      ctx.fillStyle = '#eceff1';
+      ctx.font = `${Math.max(8, ts * 0.22)}px system-ui`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const label = s.amount >= 10 ? String(Math.round(s.amount)) : s.amount.toFixed(1);
+      ctx.fillText(label, p.x + ts * 0.5, p.y + ts * 0.5 + h * 0.35);
+    }
   }
   for (const key of ship.urgent) {
     const [kind, id] = key.split(':');
@@ -458,8 +490,12 @@ function drawCrew(
     ctx.fillStyle = c.health < 35 ? '#ff5252' : '#69f0ae';
     ctx.fillRect(x - r, y - r * 1.45, (r * 2 * c.health) / 100, Math.max(2, r * 0.2));
   }
+  if (c.carry && ts >= 12) {
+    ctx.fillStyle = '#ffe082';
+    ctx.fillRect(x + r * 0.35, y - r * 0.15, r * 0.7, r * 0.5);
+  }
   const icon =
-    c.state === 'sleeping' ? 'z' : c.state === 'eating' ? '🍴' : c.state === 'cryo' ? '❄' : c.state === 'healing' ? '✚' : c.job === 'extinguish' ? '🔥' : c.job === 'pilot' ? '✈' : '';
+    c.state === 'sleeping' ? 'z' : c.state === 'eating' ? '🍴' : c.state === 'cryo' ? '❄' : c.state === 'healing' ? '✚' : c.job === 'extinguish' ? '🔥' : c.job === 'haul' ? '▣' : c.job === 'pilot' ? '✈' : '';
   if (ts >= 16) {
     ctx.font = `${Math.max(9, ts * 0.28)}px system-ui`;
     ctx.textAlign = 'center';
