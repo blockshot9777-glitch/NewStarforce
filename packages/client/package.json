@@ -1,0 +1,9 @@
+{
+  "name": "@starforce/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@starforce/shared": "0.1.0"
+  }
+}

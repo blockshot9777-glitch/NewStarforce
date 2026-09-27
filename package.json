@@ -1,0 +1,25 @@
+{
+  "name": "newstarforce",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "server": "tsx watch packages/server/src/main.ts",
+    "client": "vite --config packages/client/vite.config.ts",
+    "build": "vite build --config packages/client/vite.config.ts",
+    "start": "npm run build && tsx packages/server/src/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/shared --noEmit && tsc -p packages/server --noEmit && tsc -p packages/client --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.0",
+    "vitest": "^3.2.4"
+  }
+}
