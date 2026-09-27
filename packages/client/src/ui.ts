@@ -145,6 +145,11 @@ function handleAction(el: HTMLElement): void {
       break;
     case 'air':
       store.airOverlay = !store.airOverlay;
+      if (store.airOverlay) store.tempOverlay = false;
+      break;
+    case 'temp':
+      store.tempOverlay = !store.tempOverlay;
+      if (store.tempOverlay) store.airOverlay = false;
       break;
     case 'galaxy':
       store.galaxyOpen = !store.galaxyOpen;
@@ -316,6 +321,7 @@ function renderButtons(own: OwnShipView | null): void {
       ? `<button data-act="panel" data-panel="build" class="${store.panel === 'build' ? 'on' : ''}">🛠 Строительство</button>
          <button data-act="panel" data-panel="crew" class="${store.panel === 'crew' ? 'on' : ''}">👥 Команда</button>
          <button data-act="air" class="${store.airOverlay ? 'on' : ''}">💨 Воздух</button>
+         <button data-act="temp" class="${store.tempOverlay ? 'on' : ''}">🌡 Температура</button>
          <button data-act="help">?</button>`
       : '',
   );

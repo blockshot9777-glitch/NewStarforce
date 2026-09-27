@@ -1,5 +1,5 @@
 // Корпус и интерьер корабля: пол, стены, двери, модули, экипаж, пожары, свет и воздух по комнатам.
-import { MODULES, TILE_WORLD, isModuleType, moduleSize, type ModuleType, type OwnShipView, type Physical } from '@starforce/shared';
+import { MODULES, TEMP_COMFORT_MAX, TEMP_COMFORT_MIN, TILE_WORLD, isModuleType, moduleSize, type ModuleType, type OwnShipView, type Physical } from '@starforce/shared';
 import { store, type ParsedLayout } from '../store';
 import { DOOR_CELL, WALL_CELL, drawCell, drawPawn, drawStackArt, floorCell } from './kenney';
 import { drawModule, roundRect } from './modules';
@@ -388,6 +388,22 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
     paintFloor(ctx, l, gx, gy, p.x, p.y, ts, stock, thin);
   });
 
+  if (store.tempOverlay) {
+    l.rooms.rooms.forEach((room, ri) => {
+      const temp = ship.roomTemp[ri] ?? 21;
+      const hot = temp > TEMP_COMFORT_MAX;
+      const cold = temp < TEMP_COMFORT_MIN;
+      const excess = hot ? temp - TEMP_COMFORT_MAX : cold ? TEMP_COMFORT_MIN - temp : 0;
+      ctx.fillStyle = hot ? '#c62828' : cold ? '#1565c0' : '#2e7d32';
+      ctx.globalAlpha = 0.14 + Math.min(0.4, excess / 70);
+      for (const tIdx of room.tiles) {
+        const p = at(tIdx % l.w, Math.floor(tIdx / l.w));
+        ctx.fillRect(p.x, p.y, ts + 0.5, ts + 0.5);
+      }
+      ctx.globalAlpha = 1;
+    });
+  }
+
   // Оверлей воздуха: каждая комната своим цветом, насыщенность — концентрация O₂.
   if (store.airOverlay) {
     l.rooms.rooms.forEach((room, ri) => {
@@ -565,6 +581,37 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
   drawLighting(ctx, ship, l, ox, oy, ts);
   // Проценты воздуха — после модулей и темноты, иначе при отдалении их закрывает постройка.
   if (store.airOverlay) drawAirLabels(ctx, ship, l, at, ts);
+  if (store.tempOverlay) drawTempLabels(ctx, ship, l, at, ts);
+}
+
+function drawTempLabels(
+  ctx: CanvasRenderingContext2D,
+  ship: OwnShipView,
+  l: ParsedLayout,
+  at: (x: number, y: number) => { x: number; y: number },
+  ts: number,
+): void {
+  if (ts < 8) return;
+  l.rooms.rooms.forEach((room, ri) => {
+    if (!room.tiles.length) return;
+    const temp = ship.roomTemp[ri] ?? 21;
+    let sx = 0;
+    let sy = 0;
+    for (const tIdx of room.tiles) {
+      sx += tIdx % l.w;
+      sy += Math.floor(tIdx / l.w);
+    }
+    const c = at(sx / room.tiles.length + 0.5, sy / room.tiles.length + 0.5);
+    const label = `${Math.round(temp)}°`;
+    ctx.font = `bold ${Math.max(9, Math.min(16, ts * 0.42))}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+    ctx.fillStyle = temp < TEMP_COMFORT_MIN ? '#90caf9' : temp > TEMP_COMFORT_MAX ? '#ff8a80' : '#d8f3f8';
+    ctx.strokeText(label, c.x, c.y);
+    ctx.fillText(label, c.x, c.y);
+  });
 }
 
 function drawAirLabels(

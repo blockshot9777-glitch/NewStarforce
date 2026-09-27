@@ -378,6 +378,37 @@ function drawProcedural(ctx: CanvasRenderingContext2D, type: ModuleType, s: numb
       ctx.fill();
       break;
     }
+    case 'heater': {
+      base(ctx, s);
+      ctx.fillStyle = '#3e2723';
+      roundRect(ctx, s * 0.18, s * 0.22, s * 0.64, s * 0.5, s * 0.06);
+      ctx.fill();
+      ctx.strokeStyle = on ? '#ff8f00' : '#5d4037';
+      ctx.lineWidth = Math.max(1, s * 0.05);
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.arc(s * (0.3 + i * 0.13), s * 0.46, s * 0.05, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      if (on) glow(ctx, c, s * 0.46, s * 0.35, '#ff8f00', 0.35);
+      break;
+    }
+    case 'cooler': {
+      base(ctx, s);
+      ctx.fillStyle = '#37474f';
+      roundRect(ctx, s * 0.16, s * 0.2, s * 0.68, s * 0.55, s * 0.06);
+      ctx.fill();
+      ctx.strokeStyle = on ? '#4fc3f7' : '#546e7a';
+      ctx.lineWidth = Math.max(1, s * 0.045);
+      for (let i = 0; i < 5; i++) {
+        ctx.beginPath();
+        ctx.moveTo(s * (0.24 + i * 0.11), s * 0.28);
+        ctx.lineTo(s * (0.24 + i * 0.11), s * 0.66);
+        ctx.stroke();
+      }
+      if (on) glow(ctx, c, s * 0.46, s * 0.32, '#29b6f6', 0.28);
+      break;
+    }
     case 'bridge': {
       base(ctx, s, 0.04);
       ctx.fillStyle = '#102027';

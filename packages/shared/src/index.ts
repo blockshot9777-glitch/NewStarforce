@@ -3,6 +3,7 @@ export * from './rng';
 export * from './state';
 export * from './grid';
 export * from './air';
+export * from './temp';
 export * from './ship';
 export * from './items';
 export * from './crew';

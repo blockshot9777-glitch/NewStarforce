@@ -91,6 +91,8 @@ const MODULE_ART: Record<ModuleType, { c: number; r: number }> = {
   solar_panel: { c: 5, r: 0 },
   cryopod: { c: 2, r: 0 },
   vent: { c: 6, r: 4 },
+  heater: { c: 4, r: 3 },
+  cooler: { c: 6, r: 4 },
 };
 
 export function drawModuleArt(ctx: CanvasRenderingContext2D, type: ModuleType, x: number, y: number, size: number): boolean {

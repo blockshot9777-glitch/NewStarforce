@@ -140,6 +140,8 @@ export interface Ship {
   res: Resources;
   /** Концентрация кислорода 0..1 на каждой клетке. */
   air: number[];
+  /** Температура °C на каждой клетке. */
+  temp: number[];
   /** Суммарный кислород на борту (для интерфейса). */
   oxygen: number;
   battery: number;

@@ -25,6 +25,9 @@ import {
   PHYSICAL,
   STARTER_LAYOUT,
   STARTER_RESOURCES,
+  TEMP_AMBIENT,
+  HEATER_DEG_PER_SEC,
+  COOLER_DEG_PER_SEC,
   WATER_RECYCLE_RATE,
   buildCost,
   buildWork,
@@ -37,6 +40,7 @@ import {
   type Tile,
 } from './defs';
 import { computeRooms, stepAir, type RoomMap } from './air';
+import { stepTemp } from './temp';
 import { inBounds, isWalkable, neighbors4, tileAt } from './grid';
 import { dropCarry, dropLoose, isPhysical, putInStockpile, refundDelivered, removeStored } from './items';
 import type { Rng } from './rng';
@@ -152,6 +156,7 @@ export function createStarterShip(opts: {
     mineProgress: 0,
     res: { ...STARTER_RESOURCES },
     air: tiles.map((t) => (t === 'floor' || t === 'door' ? 1 : 0)),
+    temp: new Array(tiles.length).fill(TEMP_AMBIENT),
     oxygen: 0,
     battery: BATTERY_CAPACITY / 2,
     stats: {
@@ -200,13 +205,16 @@ export function upgradeHull(ship: Ship, next: HullClass, nextId: () => number): 
   const oy = Math.floor((hull.h - ship.h) / 2);
   const tiles: Tile[] = new Array(hull.w * hull.h).fill('empty');
   const air: number[] = new Array(hull.w * hull.h).fill(0);
+  const temp: number[] = new Array(hull.w * hull.h).fill(TEMP_AMBIENT);
   for (let y = 0; y < ship.h; y++) {
     for (let x = 0; x < ship.w; x++) {
       tiles[(y + oy) * hull.w + x + ox] = ship.tiles[y * ship.w + x];
       air[(y + oy) * hull.w + x + ox] = ship.air[y * ship.w + x] ?? 0;
+      temp[(y + oy) * hull.w + x + ox] = ship.temp?.[y * ship.w + x] ?? TEMP_AMBIENT;
     }
   }
   ship.air = air;
+  ship.temp = temp;
   const fires: Record<number, number> = {};
   for (const [tile, v] of Object.entries(ship.fires)) {
     const t = Number(tile);
@@ -464,6 +472,16 @@ export function lifeSupport(ship: Ship, dt: number, nextId: () => number): void 
   }
   const conc = stepAir(ship, ship.air, rooms, { deltas, openDoors, vents }, dt);
   ship.oxygen = rooms.rooms.reduce((sum, r, i) => sum + conc[i] * r.tiles.length * O2_PER_TILE, 0);
+  const roomDelta = new Map<number, number>();
+  for (const m of ship.modules) {
+    if (!functional(m) || !m.powered) continue;
+    const room = rooms.roomOf[m.y * ship.w + m.x];
+    if (room < 0) continue;
+    const deg = m.type === 'heater' ? HEATER_DEG_PER_SEC : m.type === 'cooler' ? -COOLER_DEG_PER_SEC : 0;
+    if (deg) roomDelta.set(room, (roomDelta.get(room) ?? 0) + deg);
+  }
+  if (!ship.temp || ship.temp.length !== ship.w * ship.h) ship.temp = new Array(ship.w * ship.h).fill(TEMP_AMBIENT);
+  stepTemp(ship, ship.temp, rooms, { roomDelta, openDoors, vents }, dt);
 }
 
 /** Поджигает клетку пола (метеорит, взрыв модуля). */

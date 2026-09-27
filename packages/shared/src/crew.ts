@@ -1,9 +1,10 @@
 // ИИ экипажа в духе RimWorld: потребности → задачи → перемещение по сетке корабля.
-import { CREW_SPEED, EAT_RESTORE, EAT_SECONDS, FOOD_DECAY, HYDRO_YIELD, MODULES, REST_DECAY, ROBOT_SPEED_MULT, SUFFOCATE_BELOW, DARK_WORK_MULT } from './defs';
+import { CREW_SPEED, EAT_RESTORE, EAT_SECONDS, FOOD_DECAY, HYDRO_YIELD, MODULES, REST_DECAY, ROBOT_SPEED_MULT, SUFFOCATE_BELOW, DARK_WORK_MULT, TEMP_COMFORT_MAX, TEMP_COMFORT_MIN, TEMP_HURT } from './defs';
 import { findPath, inBounds, isWalkable, neighbors4, tileAt } from './grid';
 import { dropCarry, dropLoose, materialsReady, planHaulJobs, removeStored, stepHaul } from './items';
 import { JOB_KINDS, defaultPriorities, type Crew, type Job, type JobKind, type Ship, type ShipModule, type Vec, type WorkPriority } from './state';
 import { airAt, blueprintAt, completeBlueprint, functional, isLit, moduleAt, walkableTiles, type ShipContext } from './ship';
+import { tempAt } from './temp';
 
 /** Запасной порядок, когда личные приоритеты совпали: пожар, мостик, ремонт, переноска, урожай, стройка. */
 const JOB_PRIORITY: JobKind[] = ['extinguish', 'pilot', 'repair', 'haul', 'harvest', 'build'];
@@ -316,7 +317,12 @@ export function updateCrew(ship: Ship, dt: number, ctx: ShipContext): void {
       const suffocating = airAt(ship, c.x, c.y) < SUFFOCATE_BELOW;
       if (suffocating) c.health -= 4 * dt;
       if (c.food <= 0) c.health -= 0.5 * dt;
-      if (!suffocating && c.food > 20) c.health = Math.min(100, c.health + 0.2 * dt);
+      // Холод и жара бьют в жилом воздухе. В вакууме урон уже даёт удушье.
+      const degrees = tempAt(ship, c.x, c.y);
+      const comfortable = degrees >= TEMP_COMFORT_MIN && degrees <= TEMP_COMFORT_MAX;
+      if (!suffocating && degrees < TEMP_COMFORT_MIN) c.health -= TEMP_HURT * (TEMP_COMFORT_MIN - degrees) * dt;
+      else if (!suffocating && degrees > TEMP_COMFORT_MAX) c.health -= TEMP_HURT * (degrees - TEMP_COMFORT_MAX) * dt;
+      if (!suffocating && c.food > 20 && comfortable) c.health = Math.min(100, c.health + 0.2 * dt);
     }
   }
   for (const c of ship.crew) {

@@ -47,6 +47,7 @@ export const store = {
   selectedCrew: null as number | null,
   expeditionCrew: new Set<number>(),
   airOverlay: false,
+  tempOverlay: false,
   galaxyOpen: false,
 
   mouse: { x: 0, y: 0, wx: 0, wy: 0, down: false, button: 0 },

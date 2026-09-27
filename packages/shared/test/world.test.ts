@@ -329,6 +329,17 @@ describe('мир', () => {
     expect(s.crew[0].carry).toBeNull();
   });
 
+  it('старое сохранение без температуры получает 21 °C', () => {
+    const w = World.create(5);
+    w.join('A', 'tok');
+    const raw = JSON.parse(w.toJSON()) as { ships: { temp?: number[]; w: number; h: number }[] };
+    delete raw.ships[0].temp;
+    const loaded = World.fromJSON(JSON.stringify(raw));
+    const s = loaded.state.ships[0];
+    expect(s.temp).toHaveLength(s.w * s.h);
+    expect(s.temp.every((v) => v === 21)).toBe(true);
+  });
+
   it('зона склада включается и выключается', () => {
     const { w, p, ship } = newWorld();
     const t = ship.stockpile[0];

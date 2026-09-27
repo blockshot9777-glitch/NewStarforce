@@ -10,6 +10,6 @@
 Картинка рисуется на одну клетку: 64×64 px (или 128×128 для HiDPI), прозрачный фон, свет сверху-слева.
 
 Имена файлов: bridge, reactor, battery, engine, o2gen, water_recycler, hydroponics, bed, medbay,
-shield_gen, laser, missile, radar, mining_laser, lamp, solar_panel, cryopod, vent — например `reactor.png`.
+shield_gen, laser, missile, radar, mining_laser, lamp, solar_panel, cryopod, vent, heater, cooler — например `reactor.png`.
 
 Каждый файл не собственного производства — строка в `/CREDITS.md` (автор, источник, лицензия).

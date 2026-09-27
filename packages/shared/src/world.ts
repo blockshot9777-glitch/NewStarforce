@@ -50,6 +50,7 @@ import {
   type WeaponDef,
 } from './defs';
 import { clearOrder, isPiloted, normalizePriorities, orderCryo, orderMove, placeCrewOnBoard, setDraft, setPriority, toggleUrgent, updateCrew } from './crew';
+import { normalizeTemp } from './temp';
 import { dropCarry, giveShip, materialsReady, normalizeStorage, putInStockpile, removeStored, syncStored, takeShip } from './items';
 import type { Command, Contact, LayoutView, OwnShipView, Snapshot } from './protocol';
 import { Rng } from './rng';
@@ -187,6 +188,7 @@ export class World {
     for (const sys of state.systems) sys.fx = [];
     for (const ship of state.ships) {
       normalizeStorage(ship, () => state.nextId++);
+      normalizeTemp(ship);
       for (const c of ship.crew) normalizePriorities(c);
     }
     for (const e of state.expeditions) {
@@ -1235,6 +1237,7 @@ export class World {
       oxygen: ship.oxygen,
       oxygenCap: ship.stats.oxygenCap,
       roomAir: rooms.rooms.map((r) => r2(ship.air[r.tiles[0]] ?? 0)),
+      roomTemp: rooms.rooms.map((r) => r2(ship.temp?.[r.tiles[0]] ?? 21)),
       battery: ship.battery,
       batteryCap: ship.stats.batteryCap,
       powerOutput: ship.stats.powerOutput,

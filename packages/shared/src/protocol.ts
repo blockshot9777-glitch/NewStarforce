@@ -2,7 +2,7 @@
 import type { Biome, BuildKind, HullClass, ModuleType, NpcType, Physical, Resource, Resources } from './defs';
 import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry, WorkPriority } from './state';
 
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 export type Command =
   | { c: 'move'; x: number; y: number }
@@ -91,6 +91,8 @@ export interface OwnShipView {
   oxygenCap: number;
   /** Средняя концентрация O₂ по комнатам — порядок совпадает с computeRooms(layout). */
   roomAir: number[];
+  /** Средняя температура °C по комнатам, тот же порядок. */
+  roomTemp: number[];
   battery: number;
   batteryCap: number;
   powerOutput: number;

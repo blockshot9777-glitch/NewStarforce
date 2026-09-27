@@ -25,6 +25,9 @@ import {
   placeBlueprint,
   shipRooms,
   stepAir,
+  stepTemp,
+  tempAt,
+  TEMP_AMBIENT,
   toggleUrgent,
   updateCrew,
   updateFires,
@@ -355,5 +358,84 @@ describe('экипаж спасается от удушья', () => {
     run(ship, ctx, 8);
     expect(airAt(ship, c.x, c.y)).toBeGreaterThan(0.35);
     expect(c.health).toBeGreaterThan(50);
+  });
+});
+
+describe('температура отсеков', () => {
+  function support(ship: Ship, ctx: ShipContext, seconds: number) {
+    const dt = 0.1;
+    for (let i = 0; i < seconds * 10; i++) {
+      distributePower(ship, dt, ctx);
+      lifeSupport(ship, dt, ctx.nextId);
+    }
+  }
+
+  it('обогреватель поднимает температуру, охладитель снижает, холод бьёт человека и не бьёт робота', () => {
+    const { ship, ctx, rng } = setup();
+    const rooms = shipRooms(ship);
+    let spot: { x: number; y: number; room: number } | null = null;
+    for (const [ri, room] of rooms.rooms.entries()) {
+      if (room.vented) continue;
+      for (const t of room.tiles) {
+        const x = t % ship.w;
+        const y = Math.floor(t / ship.w);
+        if (validateBuild(ship, x, y, 'heater') === null) {
+          spot = { x, y, room: ri };
+          break;
+        }
+      }
+      if (spot) break;
+    }
+    expect(spot).not.toBeNull();
+    ship.modules.push(makeModule(9000, 'heater', spot!.x, spot!.y));
+    ship.battery = 500;
+    const tile = spot!.y * ship.w + spot!.x;
+    const before = ship.temp[tile];
+    support(ship, ctx, 25);
+    expect(ship.temp[tile]).toBeGreaterThan(before + 4);
+
+    ship.modules.find((m) => m.id === 9000)!.type = 'cooler';
+    for (const t of rooms.rooms[spot!.room].tiles) ship.temp[t] = TEMP_AMBIENT;
+    support(ship, ctx, 25);
+    expect(ship.temp[tile]).toBeLessThan(TEMP_AMBIENT - 4);
+
+    const human = ship.crew.find((c) => !c.robot)!;
+    human.x = spot!.x;
+    human.y = spot!.y;
+    human.food = 80;
+    human.health = 100;
+    human.job = null;
+    human.state = 'idle';
+    for (const t of rooms.rooms[spot!.room].tiles) ship.temp[t] = -20;
+    updateCrew(ship, 2, ctx);
+    expect(human.health).toBeLessThan(95);
+    expect(tempAt(ship, human.x, human.y)).toBe(-20);
+
+    const robot = makeRobot(rng, ctx.nextId(), spot!.x, spot!.y);
+    robot.health = 100;
+    ship.crew.push(robot);
+    updateCrew(ship, 2, ctx);
+    expect(robot.health).toBe(100);
+
+    human.health = 80;
+    for (const t of rooms.rooms[spot!.room].tiles) ship.temp[t] = TEMP_AMBIENT;
+    updateCrew(ship, 2, ctx);
+    expect(human.health).toBeGreaterThanOrEqual(80);
+  });
+
+  it('открытая дверь смешивает температуру соседних отсеков', () => {
+    const { ship } = setup();
+    const map = shipRooms(ship);
+    const door = map.doors.find((d) => d.rooms.length >= 2);
+    expect(door).toBeTruthy();
+    const [a, b] = door!.rooms;
+    for (const t of map.rooms[a].tiles) ship.temp[t] = 40;
+    for (const t of map.rooms[b].tiles) ship.temp[t] = 0;
+    const cold = map.rooms[b].tiles[0];
+    for (let i = 0; i < 30; i++) {
+      stepTemp(ship, ship.temp, map, { roomDelta: new Map(), openDoors: new Set([door!.tile]) }, 0.1);
+    }
+    expect(ship.temp[cold]).toBeGreaterThan(8);
+    expect(ship.temp[map.rooms[a].tiles[0]]).toBeLessThan(32);
   });
 });

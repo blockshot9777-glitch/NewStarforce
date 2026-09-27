@@ -109,7 +109,9 @@ export type ModuleType =
   | 'lamp'
   | 'solar_panel'
   | 'cryopod'
-  | 'vent';
+  | 'vent'
+  | 'heater'
+  | 'cooler';
 
 export type BuildCategory = 'orders' | 'tiles' | 'power' | 'air' | 'water' | 'food' | 'furniture' | 'medicine' | 'security' | 'ship';
 
@@ -388,6 +390,30 @@ export const MODULES: Record<ModuleType, ModuleDef> = {
     glyph: '❄',
     color: '#4dd0e1',
   },
+  heater: {
+    name: 'Обогреватель',
+    desc: 'Греет свой отсек. В тесноте может перегреть экипаж.',
+    cost: { metal: 12 },
+    work: 4,
+    maxHp: 40,
+    demand: 2,
+    priority: 4,
+    category: 'air',
+    glyph: '♨',
+    color: '#ff8f00',
+  },
+  cooler: {
+    name: 'Охладитель',
+    desc: 'Студит свой отсек. Без меры люди замерзают.',
+    cost: { metal: 12, crystals: 1 },
+    work: 4,
+    maxHp: 40,
+    demand: 2,
+    priority: 4,
+    category: 'air',
+    glyph: 'Х',
+    color: '#29b6f6',
+  },
 };
 
 export const MODULE_TYPES = Object.keys(MODULES) as ModuleType[];
@@ -430,6 +456,22 @@ export const VENT_FLOW = 0.55;
 export const DOOR_LEAK = 0.02;
 /** Доля воздуха, теряемая за секунду комнатой с пробоиной. */
 export const VENT_LOSS = 1.5;
+/** Комфорт экипажа, °C. Вне полосы люди теряют здоровье. */
+export const TEMP_COMFORT_MIN = 10;
+export const TEMP_COMFORT_MAX = 35;
+export const TEMP_AMBIENT = 21;
+/** К чему стынет разгерметизированный отсек. */
+export const TEMP_SPACE = -80;
+export const TEMP_MIN = -120;
+export const TEMP_MAX = 120;
+/** Доля разницы с целью за секунду: корпус почти держит тепло, пробоина — нет. */
+export const TEMP_HULL_LEAK = 0.015;
+export const TEMP_VENT_LEAK = 0.35;
+/** °C/с на всю комнату, пока модуль запитан. Делится на число клеток. */
+export const HEATER_DEG_PER_SEC = 12;
+export const COOLER_DEG_PER_SEC = 12;
+/** Потеря здоровья в секунду за каждый градус вне комфорта. */
+export const TEMP_HURT = 0.15;
 /** Ниже этой концентрации экипаж задыхается. */
 export const SUFFOCATE_BELOW = 0.25;
 export const TRACTOR_RANGE = 320;
