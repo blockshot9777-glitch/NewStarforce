@@ -696,27 +696,29 @@ function drawCrew(
   t: number,
 ): void {
   const r = ts * 0.3;
-  const pawn = ts * 0.92;
+  // В кадре много пустого поля: видимый рост ~0.58 стороны. 1.38 клетки даёт тело около 0.8 клетки.
+  const pawn = ts * 1.38;
+  const bodyHalf = pawn * 0.32;
   if (c.state === 'cryo') {
     ctx.globalAlpha = 0.6;
   }
   if (c.draft) {
     ctx.strokeStyle = '#ffab40';
     ctx.lineWidth = 2;
-    ctx.strokeRect(x - pawn * 0.55, y - pawn * 0.62, pawn * 1.1, pawn * 1.15);
+    ctx.strokeRect(x - ts * 0.46, y - bodyHalf - ts * 0.06, ts * 0.92, bodyHalf * 2 + ts * 0.1);
   }
   if (selected || expedition) {
     ctx.strokeStyle = expedition ? '#69f0ae' : '#fff';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(x, y, r * 1.45, 0, Math.PI * 2);
+    ctx.arc(x, y, bodyHalf + ts * 0.08, 0, Math.PI * 2);
     ctx.stroke();
   }
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.beginPath();
-  ctx.ellipse(x, y + r * 0.9, r * 0.9, r * 0.35, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y + bodyHalf * 0.92, ts * 0.28, ts * 0.08, 0, 0, Math.PI * 2);
   ctx.fill();
-  const dressed = drawPawn(ctx, c.id, c.robot, x, y + r * 0.15, pawn) || drawPaintedPawn(ctx, c.id, c.robot, x, y + r * 0.05, pawn);
+  const dressed = drawPawn(ctx, c.id, c.robot, x, y, pawn) || drawPaintedPawn(ctx, c.id, c.robot, x, y, pawn);
   if (!dressed && c.robot) {
     ctx.fillStyle = '#90a4ae';
     roundRect(ctx, x - r * 0.8, y - r * 0.7, r * 1.6, r * 1.5, r * 0.3);
@@ -744,15 +746,17 @@ function drawCrew(
   ctx.globalAlpha = 1;
   // Полоска здоровья и значок состояния.
   if (c.health < 99) {
+    const barY = y - bodyHalf - ts * 0.1;
+    const barW = ts * 0.55;
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(x - r, y - r * 1.45, r * 2, Math.max(2, r * 0.2));
+    ctx.fillRect(x - barW / 2, barY, barW, Math.max(2, ts * 0.06));
     ctx.fillStyle = c.health < 35 ? '#ff5252' : '#69f0ae';
-    ctx.fillRect(x - r, y - r * 1.45, (r * 2 * c.health) / 100, Math.max(2, r * 0.2));
+    ctx.fillRect(x - barW / 2, barY, (barW * c.health) / 100, Math.max(2, ts * 0.06));
   }
   if (c.carry && ts >= 12) {
-    const icon = r * 0.9;
-    const ix = x + r * 0.15;
-    const iy = y - r * 0.35;
+    const icon = ts * 0.32;
+    const ix = x + ts * 0.18;
+    const iy = y - ts * 0.02;
     if (!drawStackArt(ctx, c.carry.resource, ix, iy, icon) && !drawPaintedItem(ctx, c.carry.resource, ix, iy, icon)) {
       drawResourceMark(ctx, c.carry.resource, ix, iy, icon);
     }
@@ -766,12 +770,13 @@ function drawCrew(
     ctx.fillStyle = 'rgba(0,0,0,0.7)';
     const name = c.name.split(' ')[0];
     const w = ctx.measureText(name).width + 6;
-    ctx.fillRect(x - w / 2, y + r * 1.05, w, Math.max(9, ts * 0.28) + 3);
+    const nameY = y + bodyHalf + ts * 0.02;
+    ctx.fillRect(x - w / 2, nameY, w, Math.max(9, ts * 0.28) + 3);
     ctx.fillStyle = '#80d8ff';
-    ctx.fillText(name, x, y + r * 1.1);
+    ctx.fillText(name, x, nameY + 1);
     if (icon) {
       ctx.fillStyle = '#fff';
-      ctx.fillText(icon, x + r * 1.2, y - r * 1.6);
+      ctx.fillText(icon, x + ts * 0.4, y - bodyHalf);
     }
   }
 }
