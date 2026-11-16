@@ -26,7 +26,7 @@ function starterLayout() {
 
 export function runGallery(canvas: HTMLCanvasElement): void {
   const W = window.innerWidth;
-  const H = Math.max(window.innerHeight, 2100);
+  const H = Math.max(window.innerHeight, 2500);
   canvas.width = W;
   canvas.height = H;
   canvas.style.width = `${W}px`;
@@ -77,6 +77,26 @@ export function runGallery(canvas: HTMLCanvasElement): void {
   ctx.drawImage(closed.canvas, 40 + open.canvas.width * k, 34, closed.canvas.width * k, closed.canvas.height * k);
 
   let y = 60 + open.canvas.height * k;
+  // Фрегат и крейсер: неровная планировка (центральный корпус + боковые отсеки), несколько двигателей.
+  title('Корпуса классов: фрегат и крейсер (чужие, закрытые)', 20, y - 6);
+  let hx = 20;
+  for (const [cw, ch, sd] of [[24, 13, 31], [32, 17, 47]] as const) {
+    const tiles: string[] = new Array(cw * ch).fill('empty');
+    const mods: [string, number, number][] = [];
+    const cy = Math.floor(ch / 2);
+    for (let yy = 1; yy < ch - 1; yy++)
+      for (let xx = 1; xx < cw - 1; xx++) {
+        const core = Math.abs(yy - cy) <= Math.floor(ch * 0.28);
+        const pod = xx > cw * 0.25 && xx < cw * 0.7;
+        if (core || pod) tiles[yy * cw + xx] = 'floor';
+      }
+    for (let e = 0; e < (ch > 14 ? 3 : 2); e++) mods.push(['engine', 1, cy - Math.floor(ch * 0.28) + 1 + e * Math.floor((ch * 0.56) / (ch > 14 ? 2 : 1))]);
+    const hs = generateHull({ w: cw, h: ch, tiles, modules: mods, own: false, seed: sd, variant: 'closed' });
+    const kk = Math.min(0.5, 640 / hs.canvas.width);
+    ctx.drawImage(hs.canvas, hx, y + 4, hs.canvas.width * kk, hs.canvas.height * kk);
+    hx += hs.canvas.width * kk + 20;
+    if (cw === 32) y += hs.canvas.height * kk + 30;
+  }
   title('Планеты (свет — слева сверху)', 20, y);
   BIOME_TYPES.forEach((b, i) => {
     const r = 70;

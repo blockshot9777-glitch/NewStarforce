@@ -65,15 +65,20 @@ export function generateHull(inp: HullInput): HullSprite {
   const pad = 0.9;
   const bow = Math.max(3, Math.min(9, fh * 0.6)) + 1;
   const offX = 4.2 - minX;
-  const offY = 2.6 - minY;
-  const PX = Math.max(16, Math.min(HULL_PX, Math.floor(Math.sqrt(HULL_MAX_PIXELS / ((fw + 4.2 + bow + 1.2) * (fh + 5.2))))));
+  // Размеры гондол и крыльев растут с кораблём: у крейсера двигатели заметно мощнее, чем у скаута.
+  const nr = Math.max(1.25, Math.min(1.9, fh * 0.1));
+  const wingD = Math.max(1.9, Math.min(3.2, fh * 0.17));
+  // Поле сверху и снизу — чтобы крылья не обрезались краем холста.
+  const margY = pad + wingD + 0.4;
+  const offY = margY - minY;
+  const PX = Math.max(16, Math.min(HULL_PX, Math.floor(Math.sqrt(HULL_MAX_PIXELS / ((fw + 4.2 + bow + 1.2) * (fh + 2 * margY))))));
   const CW = Math.ceil((fw + 4.2 + bow + 1.2) * PX);
-  const CH = Math.ceil((fh + 5.2) * PX);
+  const CH = Math.ceil((fh + 2 * margY) * PX);
   const T = (tx: number) => (tx + offX) * PX;
   const U = (ty: number) => (ty + offY) * PX;
 
   // --- Маски частей корпуса ---
-  const coverage = new Uint8Array(Math.ceil((fw + 4.2 + bow + 1.2) * PX) * Math.ceil((fh + 5.2) * PX));
+  const coverage = new Uint8Array(Math.ceil((fw + 4.2 + bow + 1.2) * PX) * Math.ceil((fh + 2 * margY) * PX));
   const part = (draw: (g: CanvasRenderingContext2D) => void) => {
     const [c, g] = makeCanvas(CW, CH);
     g.fillStyle = '#fff';
@@ -113,15 +118,15 @@ export function generateHull(inp: HullInput): HullSprite {
     g.fill();
   });
   const nacelle = part((g) => {
-    for (const ry of engineRows) roundRect(g, T(minX - 4), U(ry - 0.75), 5.2 * PX, 2.5 * PX, PX * 0.9);
+    for (const ry of engineRows) roundRect(g, T(minX - 4), U(ry + 0.5 - nr), 5.2 * PX, 2 * nr * PX, PX * nr * 0.72);
   });
   const wing = part((g) => {
     for (const s of [-1, 1]) {
       const edge = U(s < 0 ? minY - pad : maxY + pad);
       g.beginPath();
       g.moveTo(T(minX + fw * 0.05), edge - s * PX * 0.3);
-      g.lineTo(T(minX + fw * 0.12), edge + s * 1.9 * PX);
-      g.lineTo(T(minX + fw * 0.5), edge + s * 1.5 * PX);
+      g.lineTo(T(minX + fw * 0.12), edge + s * wingD * PX);
+      g.lineTo(T(minX + fw * 0.5), edge + s * wingD * 0.8 * PX);
       g.lineTo(T(minX + fw * 0.68), edge - s * PX * 0.3);
       g.closePath();
       g.fill();
@@ -159,7 +164,9 @@ export function generateHull(inp: HullInput): HullSprite {
         // Цилиндр: высота по поперечному сечению ближайшей гондолы.
         let best = 9;
         for (const ry of engineRows) best = Math.min(best, Math.abs(ty - (ry + 0.5)));
-        hgt += Math.sqrt(Math.max(0, 1 - (best / 1.25) ** 2)) * 1.8;
+        hgt += Math.sqrt(Math.max(0, 1 - (best / nr) ** 2)) * 1.8;
+        // Кольцевые обтекатели поперёк гондолы.
+        if (Math.abs(((tx - minX) / 1.3) % 1) < 0.06) hgt -= 0.12;
       } else if (wing[i] && !body[i]) {
         col = mix(base, dark, 0.25);
         hgt -= 0.15;
@@ -186,6 +193,47 @@ export function generateHull(inp: HullInput): HullSprite {
       // Потёртости и подтёки.
       k *= 0.86 + fbm(tx * 0.55, ty * 0.55, inp.seed + 9, 4) * 0.22;
       k *= 0.93 + 0.07 * Math.sign(Math.sin(ty * 9 + fbm(tx * 0.3, ty * 0.3, inp.seed, 2) * 6)) * fbm(tx * 0.2, ty * 3, inp.seed + 4, 2);
+      // Надстройки крыши (только у закрытого корпуса): хребет, рубка, радиаторы, люки.
+      if (inp.variant === 'closed' && carve[i]) {
+        const box = (x0: number, y0: number, x1: number, y1: number) => Math.min(tx - x0, x1 - tx, ty - y0, y1 - ty);
+        const spineW = 0.45 + fh * 0.035;
+        const bridgeX0 = maxX - 1.6 - Math.max(2, fw * 0.16);
+        const bridgeX1 = maxX - 1.4;
+        const bridgeH = Math.max(1, fh * 0.2);
+        const spine = box(minX + fw * 0.12, midY - spineW, bridgeX0 + 0.3, midY + spineW);
+        const bridge = box(bridgeX0, midY - bridgeH, bridgeX1, midY + bridgeH);
+        if (bridge > 0) {
+          // Рубка — самый высокий блок, светлее, с полосой окон поперёк.
+          hgt += smooth(bridge / 0.3) * 1.6;
+          col = mix(base, [235, 238, 240], 0.15);
+          if (Math.abs(tx - (bridgeX1 - 0.55)) < 0.16 && bridge > 0.2) {
+            col = hex('#16384a');
+            gloss[i] = 0.9;
+          }
+        } else if (spine > 0) {
+          hgt += smooth(spine / 0.25) * 0.9;
+          col = mix(base, dark, 0.3);
+          // Поперечные рёбра хребта.
+          if (Math.abs(((tx - minX) / 1.5) % 1 - 0.5) < 0.05) hgt += 0.15;
+        } else if (fh >= 8 && Math.abs(ty - midY) > fh * 0.3 && tx > minX + fw * 0.22 && tx < minX + fw * 0.62) {
+          // Радиаторные решётки по бортам.
+          const rib = Math.abs(((tx * 3) % 1) - 0.5);
+          if (box(minX + fw * 0.22, minY + 0.4, minX + fw * 0.62, maxY - 0.4) > 0.15) {
+            hgt -= rib < 0.18 ? 0.25 : 0;
+            col = mix(col, dark, 0.35);
+          }
+        } else {
+          // Люки: квадратные утопленные крышки по сетке 3×3, не на каждой ячейке.
+          const cx3 = Math.floor((tx - minX) / 3);
+          const cy3 = Math.floor((ty - minY) / 3);
+          if (hash2(cx3, cy3, inp.seed + 77) > 0.7) {
+            const hx = minX + cx3 * 3 + 1.5;
+            const hy = minY + cy3 * 3 + 1.5;
+            const hb = box(hx - 0.55, hy - 0.55, hx + 0.55, hy + 0.55);
+            if (hb > 0) hgt -= hb < 0.08 ? 0.3 : 0.05;
+          }
+        }
+      }
       // Красные полосы вдоль бортов и шеврон на носу.
       const band = Math.min(Math.abs(ty - (minY - pad + 0.45)), Math.abs(ty - (maxY + pad - 0.45)));
       const chevron = tx > maxX + 0.5 && Math.abs(Math.abs(ty - midY) - (maxX + bow - tx) * 0.33) < 0.18;
@@ -194,7 +242,7 @@ export function generateHull(inp: HullInput): HullSprite {
       k *= 1.1 - 0.22 * ((x / CW) * 0.5 + (y / CH) * 0.5);
       color[i] = [col[0] * k, col[1] * k, col[2] * k];
       height[i] = hgt;
-      gloss[i] = 0.35;
+      if (!gloss[i]) gloss[i] = 0.35;
     }
   }
 
@@ -244,10 +292,11 @@ export function generateHull(inp: HullInput): HullSprite {
     g.lineTo(T(minX + 0.8), U(ny - 0.55));
     g.stroke();
     // Сопла: два кольца с тёплым отсветом.
-    for (const dy of [-0.38, 0.38]) {
+    const nzr = 0.42 * (nr / 1.25);
+    for (const dy of [-nr * 0.3, nr * 0.3]) {
       const cx = T(minX - 4.05);
       const cy = U(ny + dy);
-      const r = PX * 0.42;
+      const r = PX * nzr;
       const rg = g.createRadialGradient(cx, cy, r * 0.1, cx, cy, r);
       rg.addColorStop(0, '#ffb26b');
       rg.addColorStop(0.35, '#7a2a10');
@@ -257,14 +306,15 @@ export function generateHull(inp: HullInput): HullSprite {
       g.beginPath();
       g.ellipse(cx, cy, r * 0.55, r, 0, 0, Math.PI * 2);
       g.fill();
-      nozzles.push({ x: minX - 4.05, y: ny + dy, r: 0.42 });
+      nozzles.push({ x: minX - 4.05, y: ny + dy, r: nzr });
     }
   }
   // Короба, решётки и антенны на пилонах.
   for (const s of [-1, 1]) {
     const edge = U(s < 0 ? minY - pad : maxY + pad);
     for (let k = 0; k < 4; k++) {
-      const gx = T(minX + fw * (0.14 + R() * 0.32));
+      // На верхнем крыле слева — бортовой номер, короба ставим правее него.
+      const gx = T(minX + fw * (s < 0 ? 0.34 + R() * 0.2 : 0.14 + R() * 0.32));
       const gy = edge + s * PX * (0.35 + R() * 0.8);
       const gw = PX * (0.4 + R() * 0.7);
       const gh = PX * (0.25 + R() * 0.35);
@@ -297,6 +347,12 @@ export function generateHull(inp: HullInput): HullSprite {
   } else {
     // Крыша отсеков: настил крупными плитами, огни иллюминаторов, остеклённая рубка у носа.
     g.save();
+    // Швы настила — только над отсеками, не над гондолами и не в пустоте у неровной планировки.
+    g.beginPath();
+    tiles.forEach((t, i) => {
+      if (t !== 'empty') g.rect(T(i % w), U(Math.floor(i / w)), PX, PX);
+    });
+    g.clip();
     g.strokeStyle = 'rgba(0,0,0,0.28)';
     g.lineWidth = 1.5;
     for (let x = minX; x <= maxX; x += 2) {
@@ -309,6 +365,8 @@ export function generateHull(inp: HullInput): HullSprite {
     g.moveTo(T(minX), U(midY));
     g.lineTo(T(maxX), U(midY));
     g.stroke();
+    g.restore();
+    g.save();
     for (let x = minX + 1; x < maxX - 1; x += 1.5) {
       for (const y of [minY + 0.25, maxY - 0.25]) {
         if (carve[Math.round(U(y)) * CW + Math.round(T(x))] && R() < 0.7) {
@@ -335,8 +393,8 @@ export function generateHull(inp: HullInput): HullSprite {
   }
 
   const lights: HullSprite['lights'] = [
-    { x: minX + fw * 0.12, y: minY - pad - 1.75, color: '#ff3b30' },
-    { x: minX + fw * 0.12, y: maxY + pad + 1.75, color: '#34ff7a' },
+    { x: minX + fw * 0.12, y: minY - pad - wingD + 0.15, color: '#ff3b30' },
+    { x: minX + fw * 0.12, y: maxY + pad + wingD - 0.15, color: '#34ff7a' },
     { x: maxX + bow - 0.5, y: midY, color: '#ffffff' },
   ];
   return { canvas, px: PX, offX, offY, nozzles, lights };
