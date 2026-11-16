@@ -1,8 +1,9 @@
 // Галерея процедурных ассетов: откройте игру с ?gallery=1, чтобы увидеть все спрайты крупно.
 // Нужна для работы над артом — без сервера и без входа в игру.
-import { BIOME_TYPES, STARTER_GLYPHS, STARTER_LAYOUT, type NpcType, type Resource } from '@starforce/shared';
+import { BIOME_TYPES, Rng, STARTER_GLYPHS, STARTER_LAYOUT, generateSurface, type NpcType, type Resource } from '@starforce/shared';
+import { renderTerrain } from './terrain';
 import { generateHull } from './gen/hull';
-import { asteroidSprite, crateSprite, drawPlanetBody, npcSprite, stationSprite } from './gen/space';
+import { asteroidSprite, crateSprite, drawPlanetBody, drawStar, npcSprite, stationSprite } from './gen/space';
 import { creatureSprite, depositSprite, shuttleSprite } from './gen/surface';
 
 function starterLayout() {
@@ -25,7 +26,7 @@ function starterLayout() {
 
 export function runGallery(canvas: HTMLCanvasElement): void {
   const W = window.innerWidth;
-  const H = Math.max(window.innerHeight, 1500);
+  const H = Math.max(window.innerHeight, 1700);
   canvas.width = W;
   canvas.height = H;
   canvas.style.width = `${W}px`;
@@ -77,6 +78,7 @@ export function runGallery(canvas: HTMLCanvasElement): void {
   const kinds: Resource[][] = [['metal'], ['metal', 'ice'], ['metal', 'crystals'], ['ice', 'crystals'], ['metal', 'ice', 'crystals']];
   kinds.forEach((kk, i) => ctx.drawImage(asteroidSprite(i * 11 + 3, kk), 20 + i * 140, y + 10, 128, 128));
   ctx.drawImage(stationSprite(1), 740, y - 10, 220, 220);
+  drawStar(ctx, 1290, y + 90, 50, '#ffe082', 1);
   ['#b0bec5', '#b3e5fc', '#ea80fc', '#ffd740'].forEach((c, i) => ctx.drawImage(crateSprite(c), 980 + i * 60, y + 50, 48, 48));
 
   y += 230;
@@ -90,6 +92,15 @@ export function runGallery(canvas: HTMLCanvasElement): void {
     ctx.drawImage(creatureSprite(t), 190 + i * 150, y + 20, 130, 130),
   );
   y += 180;
+  title('Рельеф поверхности по биомам', 20, y);
+  BIOME_TYPES.forEach((b, i) => {
+    const surf = generateSurface(new Rng(40 + i), b, (() => { let id = 1; return () => id++; })());
+    const img = renderTerrain(surf.terrain, surf.w, surf.h, b, 40 + i);
+    ctx.drawImage(img, 20 + i * 190, y + 10, 176, 120);
+    ctx.fillStyle = '#b0bec5';
+    ctx.fillText(b, 20 + i * 190, y + 145);
+  });
+  y += 160;
   title('Залежи на поверхности: металл, лёд, кристаллы, еда, биомасса, вода, тайник Машин', 20, y);
   ['metal', 'ice', 'crystals', 'food', 'biomass', 'water', 'credits'].forEach((r, i) => ctx.drawImage(depositSprite(r, i), 20 + i * 150, y + 10, 130, 130));
 }

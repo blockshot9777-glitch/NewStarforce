@@ -71,8 +71,20 @@ export function renderTerrain(terrain: string, w: number, h: number, biome: Biom
     liquid[i] = terrain[i] === '~' ? 1 : 0;
     rough[i] = terrain[i] === ',' ? 1 : 0;
   }
-  const blockAt = sampler(block, w, h);
-  const liquidAt = sampler(liquid, w, h);
+  // Размытие масок по соседним клеткам — береговые линии и края скал без «ступенек» сетки.
+  const blur = (m: Float32Array) => {
+    const out = new Float32Array(w * h);
+    const at = (x: number, y: number) => m[Math.max(0, Math.min(h - 1, y)) * w + Math.max(0, Math.min(w - 1, x))];
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++)
+        out[y * w + x] =
+          at(x, y) * 0.25 +
+          (at(x - 1, y) + at(x + 1, y) + at(x, y - 1) + at(x, y + 1)) * 0.125 +
+          (at(x - 1, y - 1) + at(x + 1, y - 1) + at(x - 1, y + 1) + at(x + 1, y + 1)) * 0.0625;
+    return out;
+  };
+  const blockAt = sampler(blur(block), w, h);
+  const liquidAt = sampler(blur(liquid), w, h);
   const roughAt = sampler(rough, w, h);
 
   // 1. Высота скал: форма по маске + рваная фактура.
@@ -83,9 +95,9 @@ export function renderTerrain(terrain: string, w: number, h: number, biome: Biom
     for (let x = 0; x < W; x++) {
       const tx = x / S;
       const ty = y / S;
-      const jitter = (fbm(tx * 1.3, ty * 1.3, seed + 3) - 0.5) * 0.35;
+      const jitter = (fbm(tx * 1.1, ty * 1.1, seed + 3) - 0.5) * 0.5;
       const b = blockAt(tx, ty) + jitter;
-      const l = liquidAt(tx, ty) + jitter * 0.6;
+      const l = liquidAt(tx, ty) + (fbm(tx * 0.9, ty * 0.9, seed + 13) - 0.5) * 0.45;
       const i = y * W + x;
       if (b > 0.5) {
         isRock[i] = 1;
@@ -147,6 +159,19 @@ export function renderTerrain(terrain: string, w: number, h: number, biome: Biom
         r = liq[0] * k;
         gg = liq[1] * k;
         b = liq[2] * k;
+        if (glowing) {
+          // Остывшая корка островками, между ними — раскалённые трещины.
+          const crust = fbm(tx * 2.2, ty * 2.2, seed + 51, 3);
+          if (crust > 0.56) {
+            const edge = Math.min(1, (crust - 0.56) * 12);
+            r = r * (1 - edge) + 38 * edge;
+            gg = gg * (1 - edge) + 26 * edge;
+            b = b * (1 - edge) + 22 * edge;
+          } else if (crust > 0.5) {
+            r = Math.min(255, r * 1.35 + 40);
+            gg = Math.min(255, gg * 1.35 + 30);
+          }
+        }
         // Светлая кромка у берега.
         if (depth < 0.15) {
           r = r * 0.7 + 255 * 0.12;

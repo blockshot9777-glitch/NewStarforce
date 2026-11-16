@@ -14,7 +14,7 @@ import { interp, store, worldToScreen } from '../store';
 import { NEBULA_SIZE, nebulaBlobs, tileOffset, wrappedCenters } from './nebula';
 import { drawHull, drawInterior, moduleWorld } from './ship';
 import { drawParticles, explosion, impact, trail } from './particles';
-import { asteroidSprite, crateSprite, drawPlanetBody, npcSprite, stationSprite } from './gen/space';
+import { asteroidSprite, crateSprite, drawPlanetBody, drawStar, npcSprite, stationSprite } from './gen/space';
 
 interface Star {
   x: number;
@@ -140,16 +140,7 @@ export function drawSpace(ctx: CanvasRenderingContext2D, W: number, H: number, t
   // Звезда в центре системы.
   const sun = S(0, 0);
   const starColor = STAR_SYSTEMS[snap.systemId]?.star ?? '#fff';
-  const sunR = 260 * z;
-  const sg = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, sunR * 3);
-  sg.addColorStop(0, '#ffffff');
-  sg.addColorStop(0.15, starColor);
-  sg.addColorStop(0.35, starColor + '55');
-  sg.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = sg;
-  ctx.beginPath();
-  ctx.arc(sun.x, sun.y, sunR * 3, 0, Math.PI * 2);
-  ctx.fill();
+  drawStar(ctx, sun.x, sun.y, 160 * z, starColor, t);
 
   for (const c of snap.contacts) {
     if (c.k === 'planet') drawPlanet(ctx, c, S, z);

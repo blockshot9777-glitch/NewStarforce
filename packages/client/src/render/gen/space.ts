@@ -411,3 +411,81 @@ export function crateSprite(color: string): HTMLCanvasElement {
   });
 }
 
+
+// ---------- Звезда ----------
+
+const stars = new SpriteCache<HTMLCanvasElement>(8);
+
+/** Диск звезды: грануляция плазмы, пятна, затемнение к краю. Свечение и лучи — при отрисовке. */
+export function starSprite(color: string): HTMLCanvasElement {
+  return stars.get(color, () => {
+    const S = 256;
+    const base = hex(color);
+    const [c, g] = makeCanvas(S, S);
+    const img = g.createImageData(S, S);
+    const d = img.data;
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const nx = ((x + 0.5) / S) * 2 - 1;
+        const ny = ((y + 0.5) / S) * 2 - 1;
+        const r2 = nx * nx + ny * ny;
+        const i = (y * S + x) * 4;
+        if (r2 > 1) {
+          d[i + 3] = 0;
+          continue;
+        }
+        const nz = Math.sqrt(1 - r2);
+        const gran = fbm(nx * 9 / (0.4 + nz), ny * 9 / (0.4 + nz), 5, 4);
+        const spot = fbm(nx * 2.5, ny * 2.5, 17, 3) > 0.7 ? 0.55 : 1;
+        const limb = 0.55 + 0.45 * Math.pow(nz, 0.5);
+        const hot = mix(base, [255, 255, 255], 0.55 + gran * 0.4);
+        const k = limb * spot * (0.85 + gran * 0.3);
+        d[i] = Math.min(255, hot[0] * k + 30);
+        d[i + 1] = Math.min(255, hot[1] * k + 20);
+        d[i + 2] = Math.min(255, hot[2] * k);
+        d[i + 3] = Math.round(255 * Math.min(1, (1 - Math.sqrt(r2)) * S * 0.5));
+      }
+    }
+    g.putImageData(img, 0, 0);
+    return c;
+  });
+}
+
+/** Звезда в кадре: широкое свечение, корона с медленными лучами, диск. */
+export function drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, t: number): void {
+  const glow = ctx.createRadialGradient(x, y, r * 0.5, x, y, r * 6);
+  glow.addColorStop(0, color + 'aa');
+  glow.addColorStop(0.25, color + '33');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(x, y, r * 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.translate(x, y);
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2 + t * 0.02 * (i % 2 ? 1 : -1);
+    const len = r * (2.2 + 0.8 * Math.sin(t * 0.7 + i * 1.7));
+    const w = r * (0.09 + 0.04 * Math.sin(i * 3.1));
+    const g = ctx.createLinearGradient(0, 0, Math.cos(a) * len, Math.sin(a) * len);
+    g.addColorStop(0, color + '40');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a + Math.PI / 2) * w, Math.sin(a + Math.PI / 2) * w);
+    ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+    ctx.lineTo(Math.cos(a - Math.PI / 2) * w, Math.sin(a - Math.PI / 2) * w);
+    ctx.closePath();
+    ctx.fill();
+  }
+  const corona = ctx.createRadialGradient(0, 0, r * 0.9, 0, 0, r * 1.6);
+  corona.addColorStop(0, 'rgba(255,255,255,0.55)');
+  corona.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = corona;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.drawImage(starSprite(color), x - r, y - r, r * 2, r * 2);
+}
