@@ -571,15 +571,56 @@ function drawFx(ctx: CanvasRenderingContext2D, S: ToScreen, z: number): void {
   drawParticles(ctx, S, z);
 }
 
+/** Луч добывающего лазера: ореол, яркая сердцевина, бегущие к цели сгустки энергии и вспышка в точке касания. */
 function beam(ctx: CanvasRenderingContext2D, a: { x: number; y: number }, b: { x: number; y: number }, color: string, t: number): void {
-  ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.55 + 0.35 * Math.sin(t * 25);
-  ctx.lineWidth = 2.5;
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  if (len < 1) return;
+  const flick = 0.85 + 0.15 * Math.sin(t * 31) * Math.sin(t * 7);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  for (const [w, al] of [
+    [10, 0.1],
+    [5, 0.3],
+    [2.4, 0.7],
+  ] as const) {
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = al * flick;
+    ctx.lineWidth = w;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 0.9 * flick;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(a.x, a.y);
   ctx.lineTo(b.x, b.y);
   ctx.stroke();
-  ctx.globalAlpha = 1;
+  // Сгустки энергии бегут от корабля к цели.
+  const ux = (b.x - a.x) / len;
+  const uy = (b.y - a.y) / len;
+  ctx.fillStyle = '#ffffff';
+  for (let d = (t * 260) % 40; d < len; d += 40) {
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.arc(a.x + ux * d, a.y + uy * d, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Вспышка в точке касания.
+  const r = 9 + 3 * Math.sin(t * 23);
+  const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.3, color);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string): void {
