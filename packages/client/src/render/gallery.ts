@@ -1,0 +1,78 @@
+// Галерея процедурных ассетов: откройте игру с ?gallery=1, чтобы увидеть все спрайты крупно.
+// Нужна для работы над артом — без сервера и без входа в игру.
+import { BIOME_TYPES, STARTER_GLYPHS, STARTER_LAYOUT, type NpcType, type Resource } from '@starforce/shared';
+import { generateHull } from './gen/hull';
+import { asteroidSprite, crateSprite, drawPlanetBody, npcSprite, stationSprite } from './gen/space';
+import { creatureSprite, shuttleSprite } from './gen/surface';
+
+function starterLayout() {
+  const w = 16;
+  const h = 9;
+  const tiles: string[] = new Array(w * h).fill('empty');
+  const modules: [string, number, number][] = [];
+  STARTER_LAYOUT.forEach((row, ry) =>
+    [...row].forEach((ch, rx) => {
+      const i = (ry + 1) * w + rx + 1;
+      if (ch === '#') tiles[i] = 'wall';
+      else if (ch === '+') tiles[i] = 'door';
+      else tiles[i] = 'floor';
+      const m = STARTER_GLYPHS[ch];
+      if (m) modules.push([m, rx + 1, ry + 1]);
+    }),
+  );
+  return { w, h, tiles, modules };
+}
+
+export function runGallery(canvas: HTMLCanvasElement): void {
+  const W = window.innerWidth;
+  const H = Math.max(window.innerHeight, 1500);
+  canvas.width = W;
+  canvas.height = H;
+  canvas.style.width = `${W}px`;
+  canvas.style.height = `${H}px`;
+  document.body.style.overflow = 'auto';
+  for (const id of ['login', 'top', 'bottom']) document.getElementById(id)?.classList.add('hidden');
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#05070c';
+  ctx.fillRect(0, 0, W, H);
+  const title = (t: string, x: number, y: number) => {
+    ctx.fillStyle = '#80deea';
+    ctx.font = '14px system-ui';
+    ctx.fillText(t, x, y);
+  };
+
+  const L = starterLayout();
+  const open = generateHull({ ...L, own: true, seed: 255, variant: 'open' });
+  const closed = generateHull({ ...L, own: false, seed: 77, variant: 'closed' });
+  const k = 0.55;
+  title('Корпус: свой (вырез под интерьер) и чужой (закрытый)', 20, 24);
+  ctx.drawImage(open.canvas, 20, 34, open.canvas.width * k, open.canvas.height * k);
+  ctx.drawImage(closed.canvas, 40 + open.canvas.width * k, 34, closed.canvas.width * k, closed.canvas.height * k);
+
+  let y = 60 + open.canvas.height * k;
+  title('Планеты (свет — слева сверху)', 20, y);
+  BIOME_TYPES.forEach((b, i) => {
+    const r = 70;
+    drawPlanetBody(ctx, 100 + i, b, 100 + i * 170, y + 95, r, Math.PI * 1.25);
+    ctx.fillStyle = '#b0bec5';
+    ctx.fillText(b, 70 + i * 170, y + 190);
+  });
+
+  y += 220;
+  title('Астероиды, станция, контейнеры', 20, y);
+  const kinds: Resource[][] = [['metal'], ['metal', 'ice'], ['metal', 'crystals'], ['ice', 'crystals'], ['metal', 'ice', 'crystals']];
+  kinds.forEach((kk, i) => ctx.drawImage(asteroidSprite(i * 11 + 3, kk), 20 + i * 140, y + 10, 128, 128));
+  ctx.drawImage(stationSprite(1), 740, y - 10, 220, 220);
+  ['#b0bec5', '#b3e5fc', '#ea80fc', '#ffd740'].forEach((c, i) => ctx.drawImage(crateSprite(c), 980 + i * 60, y + 50, 48, 48));
+
+  y += 230;
+  title('Враги в космосе', 20, y);
+  (['drone', 'sentinel', 'sporecaster'] as NpcType[]).forEach((t, i) => ctx.drawImage(npcSprite(t), 20 + i * 170, y + 10, 150, 150));
+
+  y += 190;
+  title('Поверхность: шаттл и местная жизнь', 20, y);
+  ctx.drawImage(shuttleSprite(), 20, y + 10, 150, 150);
+  (['vine', 'stalker', 'sporeling', 'drone_scout', 'ice_crawler', 'magma_beetle', 'beast'] as const).forEach((t, i) =>
+    ctx.drawImage(creatureSprite(t), 190 + i * 150, y + 20, 130, 130),
+  );
+}

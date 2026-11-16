@@ -6,6 +6,7 @@ import { loadSprites } from './render/modules';
 import { loadPainted } from './render/painted';
 import { drawMinimap, drawSpace, type SpaceRenderResult } from './render/space';
 import { drawPlanetSurface, type PlanetLayout } from './render/planet';
+import { runGallery } from './render/gallery';
 import { interp, screenToWorld, store, toast, worldToTile } from './store';
 import { initUi, kindName, renderUi, setMode } from './ui';
 
@@ -390,6 +391,10 @@ function start(): void {
   } else input.focus();
 }
 
+if (new URLSearchParams(location.search).has('gallery')) {
+  // Галерея процедурных ассетов (для работы над артом), без сервера.
+  runGallery(canvas);
+} else {
 resize();
 window.addEventListener('resize', resize);
 canvas.addEventListener('mousemove', onMouseMove);
@@ -404,3 +409,4 @@ if (kenneyEnabled()) loadKenney();
 initUi();
 start();
 requestAnimationFrame(frame);
+}

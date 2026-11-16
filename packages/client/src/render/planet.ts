@@ -3,6 +3,7 @@ import { CREATURES, RESOURCE_NAMES, SURFACE_BIOMES, type ExpeditionView, type Ph
 import { store } from '../store';
 import { drawPaintedItem, drawPaintedPawn, drawPaintedSprite } from './painted';
 import { renderTerrain } from './terrain';
+import { creatureSprite, shuttleSprite } from './gen/surface';
 
 const RES_COLOR: Partial<Record<Resource, string>> = {
   metal: '#b0bec5',
@@ -30,11 +31,6 @@ export interface PlanetLayout {
   ts: number;
 }
 
-function shade(hex: string, k: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  const f = (c: number) => Math.max(0, Math.min(255, Math.round(c * k)));
-  return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`;
-}
 
 const terrainCanvas = new Map<number, HTMLCanvasElement>();
 
@@ -110,7 +106,24 @@ export function drawPlanetSurface(ctx: CanvasRenderingContext2D, W: number, H: n
   ctx.arc(sx, sy, ts * 2.5, 0, Math.PI * 2);
   ctx.stroke();
   ctx.setLineDash([]);
-  if (!drawPaintedSprite(ctx, 'planet:shuttle', sx, sy, ts * 2.6)) drawShuttleFallback(ctx, sx, sy, ts, t);
+  if (!drawPaintedSprite(ctx, 'planet:shuttle', sx, sy, ts * 2.6)) {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath();
+    ctx.ellipse(sx + ts * 0.25, sy + ts * 0.3, ts * 1.15, ts * 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.drawImage(shuttleSprite(), sx - ts * 1.3, sy - ts * 1.3, ts * 2.6, ts * 2.6);
+  }
+  // Посадочные огни мигают.
+  for (const dx of [-0.95, 0.95]) {
+    const on = Math.sin(t * 4 + dx) > 0;
+    const g = ctx.createRadialGradient(sx + dx * ts, sy + ts * 0.75, 0, sx + dx * ts, sy + ts * 0.75, ts * 0.3);
+    g.addColorStop(0, on ? 'rgba(255,80,50,0.95)' : 'rgba(120,30,20,0.6)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(sx + dx * ts, sy + ts * 0.75, ts * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // Ресурсные точки.
   drawNodes(ctx, e, L, t);
@@ -119,59 +132,6 @@ export function drawPlanetSurface(ctx: CanvasRenderingContext2D, W: number, H: n
   return L;
 }
 
-function drawShuttleFallback(ctx: CanvasRenderingContext2D, sx: number, sy: number, ts: number, t: number): void {
-  // Тень на грунте, посадочные опоры, корпус тёмного металла с бортовыми огнями.
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.beginPath();
-  ctx.ellipse(sx + ts * 0.25, sy + ts * 0.3, ts * 1.25, ts * 0.95, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#2a2f36';
-  ctx.lineWidth = Math.max(2, ts * 0.12);
-  for (const [dx, dy] of [[-1, -0.8], [1, -0.8], [-1, 0.9], [1, 0.9]]) {
-    ctx.beginPath();
-    ctx.moveTo(sx + dx * ts * 0.5, sy + dy * ts * 0.4);
-    ctx.lineTo(sx + dx * ts * 1.05, sy + dy * ts * 0.95);
-    ctx.stroke();
-  }
-  const body = ctx.createLinearGradient(sx - ts, sy - ts, sx + ts, sy + ts);
-  body.addColorStop(0, '#b9c0c8');
-  body.addColorStop(0.5, '#6d757e');
-  body.addColorStop(1, '#2e3339');
-  ctx.fillStyle = body;
-  ctx.strokeStyle = '#15181c';
-  ctx.lineWidth = Math.max(1, ts * 0.08);
-  ctx.beginPath();
-  ctx.moveTo(sx, sy - ts * 1.15);
-  ctx.lineTo(sx + ts * 0.75, sy - ts * 0.2);
-  ctx.lineTo(sx + ts * 0.7, sy + ts * 0.85);
-  ctx.lineTo(sx - ts * 0.7, sy + ts * 0.85);
-  ctx.lineTo(sx - ts * 0.75, sy - ts * 0.2);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(142,43,43,0.9)';
-  ctx.lineWidth = Math.max(1, ts * 0.1);
-  ctx.beginPath();
-  ctx.moveTo(sx - ts * 0.55, sy + ts * 0.45);
-  ctx.lineTo(sx + ts * 0.55, sy + ts * 0.45);
-  ctx.stroke();
-  const glass = ctx.createLinearGradient(sx, sy - ts * 0.7, sx, sy - ts * 0.2);
-  glass.addColorStop(0, '#4fc3f7');
-  glass.addColorStop(1, '#0d2a3a');
-  ctx.fillStyle = glass;
-  ctx.beginPath();
-  ctx.moveTo(sx, sy - ts * 0.8);
-  ctx.lineTo(sx + ts * 0.3, sy - ts * 0.25);
-  ctx.lineTo(sx - ts * 0.3, sy - ts * 0.25);
-  ctx.closePath();
-  ctx.fill();
-  for (const dx of [-0.6, 0.6]) {
-    ctx.fillStyle = Math.sin(t * 4 + dx) > 0 ? 'rgba(255,80,50,0.95)' : 'rgba(120,30,20,0.9)';
-    ctx.beginPath();
-    ctx.arc(sx + dx * ts, sy + ts * 0.7, ts * 0.09, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
 
 function drawNodes(ctx: CanvasRenderingContext2D, e: ExpeditionView, L: PlanetLayout, t: number): void {
   const { ox, oy, ts } = L;
@@ -231,64 +191,18 @@ function drawCreatures(ctx: CanvasRenderingContext2D, e: ExpeditionView, L: Plan
     ctx.beginPath();
     ctx.ellipse(x + r * 0.25, y + r * 0.35, r, r * 0.6, 0, 0, Math.PI * 2);
     ctx.fill();
-    if (!drawPaintedSprite(ctx, `creature:${c.type}`, x, y, ts * 1.1, angle)) drawCreatureFallback(ctx, c.type, x, y, r, t + c.id);
+    if (!drawPaintedSprite(ctx, `creature:${c.type}`, x, y, ts * 1.1, angle)) {
+      const wob = 1 + 0.04 * Math.sin(t * 6 + c.id);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      ctx.drawImage(creatureSprite(c.type), (-ts * 0.65) * wob, (-ts * 0.65) * wob, ts * 1.3 * wob, ts * 1.3 * wob);
+      ctx.restore();
+    }
     bar(ctx, x, y - r - 6, ts * 0.8, c.hp / cd.hp, '#ff5252');
   }
 }
 
-/** Замена спрайта существа: объёмное тело с бликом, лапы/щупальца, светящиеся глаза. */
-function drawCreatureFallback(ctx: CanvasRenderingContext2D, type: ExpeditionView['surface']['creatures'][number]['type'], x: number, y: number, r: number, t: number): void {
-  const cd = CREATURES[type];
-  if (type === 'drone_scout') {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(t * 0.8);
-    ctx.strokeStyle = '#90a4ae';
-    ctx.lineWidth = Math.max(1, r * 0.15);
-    for (let i = 0; i < 4; i++) {
-      ctx.rotate(Math.PI / 2);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(r * 1.1, 0);
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(200,220,230,0.25)';
-      ctx.beginPath();
-      ctx.arc(r * 1.1, 0, r * 0.35, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  } else {
-    ctx.strokeStyle = shade(cd.color, 0.45);
-    ctx.lineWidth = Math.max(1, r * 0.16);
-    const legs = type === 'vine' ? 7 : 6;
-    for (let i = 0; i < legs; i++) {
-      const a = (i / legs) * Math.PI * 2 + Math.sin(t * 3 + i) * 0.25;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.quadraticCurveTo(x + Math.cos(a + 0.4) * r * 1.1, y + Math.sin(a + 0.4) * r * 1.1, x + Math.cos(a) * r * 1.5, y + Math.sin(a) * r * 1.5);
-      ctx.stroke();
-    }
-  }
-  const body = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r);
-  body.addColorStop(0, shade(cd.color, 1.5));
-  body.addColorStop(0.55, cd.color);
-  body.addColorStop(1, shade(cd.color, 0.35));
-  ctx.fillStyle = body;
-  ctx.beginPath();
-  ctx.arc(x, y, r * (type === 'drone_scout' ? 0.75 : 0.9), 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = type === 'drone_scout' ? '#ff1744' : '#ffea00';
-  ctx.shadowColor = ctx.fillStyle;
-  ctx.shadowBlur = r * 0.8;
-  ctx.beginPath();
-  if (type === 'drone_scout') ctx.arc(x, y, r * 0.22, 0, Math.PI * 2);
-  else {
-    ctx.arc(x - r * 0.3, y - r * 0.25, r * 0.12, 0, Math.PI * 2);
-    ctx.arc(x + r * 0.3, y - r * 0.25, r * 0.12, 0, Math.PI * 2);
-  }
-  ctx.fill();
-  ctx.shadowBlur = 0;
-}
 
 function drawCrew(ctx: CanvasRenderingContext2D, e: ExpeditionView, L: PlanetLayout): void {
   const { ox, oy, ts } = L;
@@ -297,7 +211,7 @@ function drawCrew(ctx: CanvasRenderingContext2D, e: ExpeditionView, L: PlanetLay
     const p = lerpPos(e, 'crew', c.id, c.x, c.y);
     const x = ox + (p.x + 0.5) * ts;
     const y = oy + (p.y + 0.5) * ts;
-    const size = ts * 1.15;
+    const size = ts * 1.6;
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath();
     ctx.ellipse(x + size * 0.08, y + size * 0.3, size * 0.32, size * 0.14, 0, 0, Math.PI * 2);

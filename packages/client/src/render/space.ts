@@ -10,9 +10,10 @@ import {
   type OwnShipView,
   type Resource,
 } from '@starforce/shared';
-import { interp, store, worldToScreen, type ParsedLayout } from '../store';
+import { interp, store, worldToScreen } from '../store';
 import { NEBULA_SIZE, nebulaBlobs, tileOffset, wrappedCenters } from './nebula';
-import { drawHull, drawInterior, drawLayoutSimple, moduleWorld } from './ship';
+import { drawHull, drawInterior, moduleWorld } from './ship';
+import { asteroidSprite, crateSprite, drawPlanetBody, npcSprite, stationSprite } from './gen/space';
 
 interface Star {
   x: number;
@@ -103,11 +104,6 @@ function drawBackground(ctx: CanvasRenderingContext2D, W: number, H: number, sys
   ctx.globalAlpha = 1;
 }
 
-function asteroidShape(id: number): number[] {
-  const rnd = seeded(id);
-  return Array.from({ length: 11 }, () => 0.75 + rnd() * 0.35);
-}
-
 const RES_COLORS: Partial<Record<Resource, string>> = {
   metal: '#b0bec5',
   ice: '#b3e5fc',
@@ -173,8 +169,8 @@ export function drawSpace(ctx: CanvasRenderingContext2D, W: number, H: number, t
     const heading = store.mode === 'system' ? headingFor(c.id, c.vx, c.vy) : 0;
     if (l) {
       const ts = TILE_WORLD * z;
-      drawHull(ctx, l, { cx: p.x, cy: p.y, ts, heading, moving, own: false, shieldFrac: c.maxShield ? c.shield / c.maxShield : 0, engines: engineTiles(l) }, t);
-      drawLayoutSimple(ctx, l, p.x, p.y, ts, heading, t);
+      // Чужой корабль виден только снаружи — без комнат.
+      drawHull(ctx, l, { id: c.id, cx: p.x, cy: p.y, ts, heading, moving, own: false, shieldFrac: c.maxShield ? c.shield / c.maxShield : 0, variant: 'closed' }, t);
       if (c.miningId !== null) {
         const a = snap.contacts.find((o) => o.id === c.miningId);
         if (a) beam(ctx, p, S(a.x, a.y), '#ffee58', t);
@@ -194,15 +190,14 @@ export function drawSpace(ctx: CanvasRenderingContext2D, W: number, H: number, t
     const moving = Math.hypot(own.vx, own.vy) > 5;
     if (l) {
       const heading = store.mode === 'system' ? headingFor(own.id, own.vx, own.vy) : 0;
-      drawHull(ctx, l, { cx: p.x, cy: p.y, ts, heading, moving, own: true, shieldFrac: own.maxShield ? own.shield / own.maxShield : 0, engines: engineTiles(l) }, t);
+      const variant = store.mode === 'ship' ? 'open' : 'closed';
+      drawHull(ctx, l, { id: own.id, cx: p.x, cy: p.y, ts, heading, moving, own: true, shieldFrac: own.maxShield ? own.shield / own.maxShield : 0, variant }, t);
       if (store.mode === 'ship') {
         const ox = p.x - (l.w / 2) * ts;
         const oy = p.y - (l.h / 2) * ts;
         const crewPos = crewInterp(own);
         drawInterior(ctx, own, l, { ox, oy, ts, t, crewPos });
         interior = { ox, oy, ts };
-      } else {
-        drawLayoutSimple(ctx, l, p.x, p.y, ts, heading, t);
       }
       // Лучи бура.
       const target = own.targetId !== null ? snap.contacts.find((o) => o.id === own.targetId) : undefined;
@@ -301,35 +296,13 @@ function crewInterp(own: OwnShipView): Map<number, { x: number; y: number }> {
   return out;
 }
 
-function engineTiles(l: ParsedLayout): [number, number][] {
-  return l.modules.filter(([type]) => type === 'engine').map(([, x, y]) => [x, y]);
-}
-
 type ToScreen = (x: number, y: number) => { x: number; y: number };
 
 function drawPlanet(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'planet' }>, S: ToScreen, z: number): void {
   const p = S(c.x, c.y);
   const r = c.r * z;
-  const b = BIOMES[c.biome];
-  const atm = ctx.createRadialGradient(p.x, p.y, r * 0.9, p.x, p.y, r * 1.35);
-  atm.addColorStop(0, b.glow + '66');
-  atm.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = atm;
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, r * 1.35, 0, Math.PI * 2);
-  ctx.fill();
   // Освещённая сторона — к звезде в центре системы.
-  const toSun = Math.atan2(-c.y, -c.x);
-  const lx = p.x + Math.cos(toSun) * r * 0.4;
-  const ly = p.y + Math.sin(toSun) * r * 0.4;
-  const g = ctx.createRadialGradient(lx, ly, r * 0.1, p.x, p.y, r);
-  g.addColorStop(0, b.glow);
-  g.addColorStop(0.45, b.color);
-  g.addColorStop(1, '#05070b');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-  ctx.fill();
+  drawPlanetBody(ctx, c.id, c.biome, p.x, p.y, r, Math.atan2(-c.y, -c.x));
   if (c.colony) {
     ctx.strokeStyle = 'rgba(105,240,174,0.35)';
     ctx.setLineDash([8, 8]);
@@ -350,95 +323,66 @@ function drawStation(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'st
   ctx.arc(p.x, p.y, SAFE_ZONE_RADIUS * z, 0, Math.PI * 2);
   ctx.stroke();
   ctx.setLineDash([]);
+  // Спрайт крупнее радиуса столкновений: солнечные фермы торчат за кольцо.
+  const size = r * 2.8;
   ctx.save();
   ctx.translate(p.x, p.y);
-  ctx.rotate(t * 0.1);
-  ctx.strokeStyle = '#90a4ae';
-  ctx.lineWidth = Math.max(2, r * 0.18);
-  ctx.beginPath();
-  ctx.arc(0, 0, r, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.lineWidth = Math.max(1, r * 0.08);
-  for (let i = 0; i < 4; i++) {
-    ctx.rotate(Math.PI / 2);
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(r, 0);
-    ctx.stroke();
-  }
-  ctx.fillStyle = '#cfd8dc';
-  ctx.beginPath();
-  ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.rotate(t * 0.03);
+  ctx.drawImage(stationSprite(c.id), -size / 2, -size / 2, size, size);
+  // Огни на кольце и шлюзах.
+  ctx.globalCompositeOperation = 'lighter';
   for (let i = 0; i < 8; i++) {
-    ctx.rotate(Math.PI / 4);
-    ctx.fillStyle = i % 2 ? '#69f0ae' : '#ff5252';
-    ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 3 + i);
-    ctx.fillRect(r - 2, -2, 4, 4);
+    const a = (i / 8) * Math.PI * 2;
+    const on = Math.sin(t * 2.5 + i * 0.8) > 0;
+    const lr = size * (on ? 0.025 : 0.012);
+    const lx = Math.cos(a) * size * 0.36;
+    const ly = Math.sin(a) * size * 0.36;
+    const g = ctx.createRadialGradient(lx, ly, 0, lx, ly, lr * 2);
+    g.addColorStop(0, i % 2 ? '#69f0ae' : '#ff5252');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(lx, ly, lr * 2, 0, Math.PI * 2);
+    ctx.fill();
   }
-  ctx.globalAlpha = 1;
   ctx.restore();
-  label(ctx, c.name, p.x, p.y + r + 18, '#69f0ae');
+  label(ctx, c.name, p.x, p.y + size * 0.5 + 10, '#69f0ae');
 }
 
 function drawAsteroid(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'asteroid' }>, S: ToScreen, z: number): void {
   const p = S(c.x, c.y);
   const r = c.r * z;
   if (r < 0.8) return;
-  const shape = asteroidShape(c.id);
-  ctx.fillStyle = '#5d5048';
-  ctx.strokeStyle = '#2d2622';
-  ctx.lineWidth = Math.max(1, r * 0.08);
-  ctx.beginPath();
-  shape.forEach((k, i) => {
-    const a = (i / shape.length) * Math.PI * 2;
-    const x = p.x + Math.cos(a) * r * k;
-    const y = p.y + Math.sin(a) * r * k;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.08)';
-  ctx.beginPath();
-  ctx.arc(p.x - r * 0.25, p.y - r * 0.25, r * 0.35, 0, Math.PI * 2);
-  ctx.fill();
-  // Вкрапления ресурсов.
-  const kinds = Object.keys(c.res) as Resource[];
-  const rnd = seeded(c.id * 7);
-  kinds.forEach((k) => {
-    ctx.fillStyle = RES_COLORS[k] ?? '#fff';
-    for (let i = 0; i < 3; i++) {
-      const a = rnd() * Math.PI * 2;
-      const d = rnd() * r * 0.6;
-      ctx.beginPath();
-      ctx.arc(p.x + Math.cos(a) * d, p.y + Math.sin(a) * d, Math.max(1, r * 0.1), 0, Math.PI * 2);
-      ctx.fill();
-    }
-  });
+  // Спрайт нарисован с полями: глыба занимает ~0.8 его ширины.
+  const size = r * 2.6;
+  const spin = (c.id % 628) / 100;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(spin);
+  ctx.drawImage(asteroidSprite(c.id, Object.keys(c.res) as Resource[]), -size / 2, -size / 2, size, size);
+  ctx.restore();
 }
 
 function drawLoot(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'loot' }>, S: ToScreen, z: number): void {
   const pos = interp(c.id, c.x, c.y);
   const p = S(pos.x, pos.y);
-  const s = Math.max(5, 7 * z);
+  const s = Math.max(10, 16 * z);
   const [first] = Object.keys(c.res) as Resource[];
-  ctx.fillStyle = RES_COLORS[first] ?? '#fff';
-  ctx.strokeStyle = '#263238';
-  ctx.lineWidth = 1;
-  ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
-  ctx.strokeRect(p.x - s / 2, p.y - s / 2, s, s);
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(((c.id * 37) % 360) * (Math.PI / 180) + performance.now() / 4000);
+  ctx.drawImage(crateSprite(RES_COLORS[first] ?? '#ffffff'), -s / 2, -s / 2, s, s);
+  ctx.restore();
   const total = Object.values(c.res).reduce((a, b) => a + (b ?? 0), 0);
-  if (s > 6) {
-    ctx.font = `bold ${Math.max(9, s * 0.8)}px system-ui`;
+  if (s > 12) {
+    ctx.font = `bold ${Math.max(10, s * 0.45)}px system-ui`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = 'rgba(0,0,0,0.8)';
     ctx.lineWidth = 3;
-    ctx.strokeText(String(Math.round(total)), p.x, p.y + s / 2);
-    ctx.fillText(String(Math.round(total)), p.x, p.y + s / 2);
+    ctx.strokeText(String(Math.round(total)), p.x, p.y + s * 0.4);
+    ctx.fillText(String(Math.round(total)), p.x, p.y + s * 0.4);
   }
 }
 
@@ -446,64 +390,50 @@ function drawNpc(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'npc' }
   const def = NPCS[c.type];
   const pos = interp(c.id, c.x, c.y);
   const p = S(pos.x, pos.y);
-  const r = Math.max(5, def.radius * z);
+  const r = Math.max(6, def.radius * z);
   ctx.save();
   ctx.translate(p.x, p.y);
-  if (def.faction === 'machines') {
-    ctx.rotate(c.heading);
-    ctx.fillStyle = c.type === 'sentinel' ? '#37474f' : '#455a64';
-    ctx.strokeStyle = '#ff1744';
-    ctx.lineWidth = Math.max(1, r * 0.1);
-    ctx.beginPath();
-    if (c.type === 'sentinel') {
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-      }
-    } else {
-      ctx.moveTo(r, 0);
-      ctx.lineTo(-r * 0.8, -r * 0.7);
-      ctx.lineTo(-r * 0.4, 0);
-      ctx.lineTo(-r * 0.8, r * 0.7);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    const eye = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.5);
-    eye.addColorStop(0, '#ff8a80');
-    eye.addColorStop(1, 'rgba(255,23,68,0)');
-    ctx.fillStyle = eye;
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    // Спорокаст — живое растение: пульсирующее ядро и щупальца.
-    ctx.strokeStyle = '#558b2f';
-    ctx.lineWidth = Math.max(1, r * 0.12);
+  if (def.faction === 'flora') {
+    // Щупальца шевелятся под телом.
+    ctx.strokeStyle = '#3e6b25';
+    ctx.lineCap = 'round';
     for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * Math.PI * 2 + Math.sin(t + i) * 0.2;
+      const a = (i / 7) * Math.PI * 2 + Math.sin(t * 0.8 + i) * 0.25;
+      ctx.lineWidth = Math.max(1, r * 0.16);
       ctx.beginPath();
       ctx.moveTo(0, 0);
-      ctx.quadraticCurveTo(Math.cos(a + 0.5) * r, Math.sin(a + 0.5) * r, Math.cos(a) * r * 1.5, Math.sin(a) * r * 1.5);
+      ctx.quadraticCurveTo(Math.cos(a + 0.6) * r * 1.2, Math.sin(a + 0.6) * r * 1.2, Math.cos(a) * r * 1.9, Math.sin(a) * r * 1.9);
       ctx.stroke();
     }
-    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
-    g.addColorStop(0, '#eeff41');
-    g.addColorStop(0.5, '#7cb342');
-    g.addColorStop(1, '#1b5e20');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(0, 0, r * (0.85 + 0.08 * Math.sin(t * 2)), 0, Math.PI * 2);
-    ctx.fill();
+    const pulse = 1 + 0.05 * Math.sin(t * 2 + c.id);
+    ctx.drawImage(npcSprite(c.type), -r * 1.6 * pulse, -r * 1.6 * pulse, r * 3.2 * pulse, r * 3.2 * pulse);
+  } else {
+    ctx.rotate(c.heading);
+    // Выхлоп.
+    if (Math.hypot(c.vx, c.vy) > 5) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createLinearGradient(-r, 0, -r * 2.4, 0);
+      g.addColorStop(0, 'rgba(255,80,60,0.8)');
+      g.addColorStop(1, 'rgba(255,40,20,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(-r * 1.6, 0, r * 0.9, r * 0.25, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    const size = r * (c.type === 'sentinel' ? 2.4 : 2.8);
+    ctx.drawImage(npcSprite(c.type), -size / 2, -size / 2, size, size);
   }
   ctx.restore();
   if (c.shield > 0) {
-    ctx.strokeStyle = 'rgba(79,195,247,0.55)';
+    ctx.strokeStyle = 'rgba(79,195,247,0.45)';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, r * 1.4, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, r * 1.55, 0, Math.PI * 2);
     ctx.stroke();
   }
-  bar(ctx, p.x, p.y - r - 8, 34, c.hp / def.maxHp, c.hostile ? '#ff1744' : '#ffab40');
+  bar(ctx, p.x, p.y - r * 1.6 - 6, 34, c.hp / def.maxHp, c.hostile ? '#ff1744' : '#ffab40');
 }
 
 function drawFx(ctx: CanvasRenderingContext2D, S: ToScreen, z: number): void {

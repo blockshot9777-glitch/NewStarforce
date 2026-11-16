@@ -1,6 +1,8 @@
 // Корпус и интерьер корабля: пол, стены, двери, модули, экипаж, пожары, свет и воздух по комнатам.
 import { MODULES, TEMP_COMFORT_MAX, TEMP_COMFORT_MIN, TILE_WORLD, isModuleType, moduleSize, type ModuleType, type OwnShipView, type Physical } from '@starforce/shared';
 import { store, type ParsedLayout } from '../store';
+import { generateHull, HULL_PX, type HullSprite } from './gen/hull';
+import { SpriteCache } from './gen/kit';
 import { DOOR_CELL, WALL_CELL, drawCell, drawPawn, drawStackArt, floorCell } from './kenney';
 import { drawModule, roundRect } from './modules';
 import { drawPaintedItem, drawPaintedPawn, drawPaintedTile } from './painted';
@@ -220,6 +222,8 @@ function drawResourceMark(ctx: CanvasRenderingContext2D, resource: Physical, x: 
 const ROOM_COLORS = ['#e53935', '#8e24aa', '#1e88e5', '#00acc1', '#43a047', '#fdd835', '#fb8c00', '#d81b60', '#3949ab', '#7cb342'];
 
 export interface HullDrawOpts {
+  /** id корабля — зерно генерации (у каждого корабля свой рисунок обшивки и номер). */
+  id: number;
   cx: number;
   cy: number;
   ts: number;
@@ -227,109 +231,101 @@ export interface HullDrawOpts {
   moving: boolean;
   own: boolean;
   shieldFrac: number;
-  engines: [number, number][];
+  /** open — вырез под интерьер; closed — крыша отсеков (вид снаружи). */
+  variant: 'open' | 'closed';
 }
 
-/** Внешняя обшивка корабля: корпус вокруг интерьера, нос вправо, дюзы слева. */
-export function drawHull(ctx: CanvasRenderingContext2D, l: ParsedLayout, o: HullDrawOpts, t: number): void {
-  let minX = l.w;
-  let minY = l.h;
-  let maxX = 0;
-  let maxY = 0;
-  l.grid.tiles.forEach((tile, i) => {
-    if (tile === 'empty') return;
-    const x = i % l.w;
-    const y = Math.floor(i / l.w);
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + 1);
-    maxY = Math.max(maxY, y + 1);
-  });
-  if (minX > maxX) return;
-  const ts = o.ts;
-  const left = (minX - l.w / 2) * ts;
-  const right = (maxX - l.w / 2) * ts;
-  const top = (minY - l.h / 2) * ts;
-  const bottom = (maxY - l.h / 2) * ts;
-  const h = bottom - top;
-  const pad = ts * 1.1;
+const hullCache = new SpriteCache<HullSprite>(40);
 
+/** Внешняя обшивка корабля: сгенерированный спрайт + факелы, огни и щит, которые меняются каждый кадр. */
+export function drawHull(ctx: CanvasRenderingContext2D, l: ParsedLayout, o: HullDrawOpts, t: number): void {
+  const sprite = hullCache.get(`${o.id}:${l.version}:${o.variant}:${o.own}`, () =>
+    generateHull({ w: l.w, h: l.h, tiles: l.grid.tiles, modules: l.modules, own: o.own, seed: o.id, variant: o.variant }),
+  );
+  const ts = o.ts;
+  const k = ts / HULL_PX;
+  const X = (tx: number) => (tx - l.w / 2) * ts;
+  const Y = (ty: number) => (ty - l.h / 2) * ts;
   ctx.save();
   ctx.translate(o.cx, o.cy);
   ctx.rotate(o.heading);
 
-  // Факел двигателей.
+  // Факелы — под корпусом, из каждого сопла.
   if (o.moving) {
-    for (const [, ey] of o.engines.length ? o.engines : [[minX, (minY + maxY) / 2]]) {
-      const y = (ey - l.h / 2 + 0.5) * ts;
-      const len = ts * (3 + Math.sin(t * 30 + ey) * 0.6);
-      const g = ctx.createLinearGradient(left - pad, y, left - pad - len, y);
-      g.addColorStop(0, 'rgba(255,220,120,0.95)');
-      g.addColorStop(0.4, 'rgba(255,110,40,0.7)');
-      g.addColorStop(1, 'rgba(255,60,0,0)');
-      ctx.fillStyle = g;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const n of sprite.nozzles) {
+      const x = X(n.x);
+      const y = Y(n.y);
+      const len = ts * (2.8 + Math.sin(t * 37 + n.y * 3) * 0.35 + Math.sin(t * 13 + n.y) * 0.25);
+      const r = n.r * ts;
+      const outer = ctx.createLinearGradient(x, y, x - len, y);
+      outer.addColorStop(0, 'rgba(255,170,80,0.9)');
+      outer.addColorStop(0.35, 'rgba(255,90,30,0.55)');
+      outer.addColorStop(1, 'rgba(255,40,0,0)');
+      ctx.fillStyle = outer;
       ctx.beginPath();
-      ctx.moveTo(left - pad * 0.6, y - ts * 0.45);
-      ctx.lineTo(left - pad - len, y);
-      ctx.lineTo(left - pad * 0.6, y + ts * 0.45);
+      ctx.moveTo(x, y - r);
+      ctx.quadraticCurveTo(x - len * 0.35, y - r * 1.25, x - len, y);
+      ctx.quadraticCurveTo(x - len * 0.35, y + r * 1.25, x, y + r);
       ctx.closePath();
       ctx.fill();
+      const core = ctx.createLinearGradient(x, y, x - len * 0.55, y);
+      core.addColorStop(0, 'rgba(220,240,255,0.95)');
+      core.addColorStop(1, 'rgba(120,180,255,0)');
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.ellipse(x - len * 0.2, y, len * 0.28, r * 0.45, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
+    ctx.restore();
   }
 
-  // Обшивка: светло-серый металл, не тёмный градиент в тень.
-  const g = ctx.createLinearGradient(0, top - pad, 0, bottom + pad);
-  g.addColorStop(0, o.own ? '#e4e7eb' : '#d0d3d8');
-  g.addColorStop(0.45, o.own ? '#c9ccd1' : '#b7bcc3');
-  g.addColorStop(1, o.own ? '#b5bac1' : '#a3a8b0');
-  ctx.fillStyle = g;
-  ctx.strokeStyle = '#6a7078';
-  ctx.lineWidth = Math.max(1, ts * 0.1);
-  ctx.beginPath();
-  ctx.moveTo(left - pad, top - pad * 0.4);
-  ctx.lineTo(right + pad * 0.3, top - pad);
-  ctx.lineTo(right + pad + h * 0.35, (top + bottom) / 2);
-  ctx.lineTo(right + pad * 0.3, bottom + pad);
-  ctx.lineTo(left - pad, bottom + pad * 0.4);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  // Гондолы двигателей — тот же металл, чуть темнее борта.
-  ctx.fillStyle = o.own ? '#9aa1a9' : '#8b929a';
-  for (const sy of [top - pad * 0.2, bottom - ts * 1.6 + pad * 0.2]) {
-    roundRect(ctx, left - pad * 1.5, sy, pad * 1.4, ts * 1.6, ts * 0.3);
-    ctx.fill();
-    ctx.stroke();
-  }
-  // Красные полосы на видимой кромке корпуса (интерьер рисуется поверх середины).
-  ctx.strokeStyle = '#8e2b2b';
-  ctx.lineWidth = Math.max(2, ts * 0.16);
-  ctx.lineCap = 'butt';
-  const midY = (top + bottom) / 2;
-  ctx.beginPath();
-  ctx.moveTo(left - pad * 0.55, top - pad * 0.22);
-  ctx.lineTo(right + pad * 0.05, top - pad * 0.7);
-  ctx.moveTo(left - pad * 0.55, bottom + pad * 0.22);
-  ctx.lineTo(right + pad * 0.05, bottom + pad * 0.7);
-  ctx.moveTo(right + pad * 0.2, midY - h * 0.12);
-  ctx.lineTo(right + pad + h * 0.16, midY);
-  ctx.lineTo(right + pad * 0.2, midY + h * 0.12);
-  ctx.stroke();
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(sprite.canvas, X(-sprite.offX), Y(-sprite.offY), sprite.canvas.width * k, sprite.canvas.height * k);
 
-  if (o.shieldFrac > 0.02) {
-    const rx = (right - left) / 2 + pad * 2 + h * 0.2;
-    const ry = h / 2 + pad * 2;
-    const cx = (left + right) / 2 + h * 0.1;
-    const sg = ctx.createRadialGradient(cx, 0, Math.min(rx, ry) * 0.6, cx, 0, Math.max(rx, ry));
-    sg.addColorStop(0, 'rgba(79,195,247,0)');
-    sg.addColorStop(1, `rgba(41,182,246,${0.12 + 0.25 * o.shieldFrac})`);
-    ctx.fillStyle = sg;
+  // Бортовые огни: мигают по очереди.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  sprite.lights.forEach((li, i) => {
+    const on = Math.sin(t * 3 + i * 2.1) > 0.2;
+    const r = ts * (on ? 0.9 : 0.35);
+    const g = ctx.createRadialGradient(X(li.x), Y(li.y), 0, X(li.x), Y(li.y), r);
+    g.addColorStop(0, li.color);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = on ? 0.95 : 0.4;
+    ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.ellipse(cx, (top + bottom) / 2, rx, ry, 0, 0, Math.PI * 2);
+    ctx.arc(X(li.x), Y(li.y), r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = `rgba(0,188,212,${0.35 + 0.4 * o.shieldFrac})`;
+  });
+  ctx.restore();
+
+  // Щит: тонкая мерцающая оболочка, а не заливка поверх корабля.
+  if (o.shieldFrac > 0.02) {
+    const w = sprite.canvas.width * k;
+    const h = sprite.canvas.height * k;
+    const cx = X(-sprite.offX) + w / 2;
+    const cy = Y(-sprite.offY) + h / 2;
+    const rx = w * 0.56;
+    const ry = h * 0.62;
+    const a = 0.1 + 0.25 * o.shieldFrac;
+    const rim = ctx.createRadialGradient(cx, cy, Math.min(rx, ry) * 0.85, cx, cy, Math.max(rx, ry));
+    rim.addColorStop(0, 'rgba(64,196,255,0)');
+    rim.addColorStop(0.8, `rgba(64,196,255,${a * 0.35})`);
+    rim.addColorStop(1, 'rgba(64,196,255,0)');
+    ctx.fillStyle = rim;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(128,222,255,${a})`;
     ctx.lineWidth = Math.max(1, ts * 0.06);
+    ctx.setLineDash([ts * 0.9, ts * 0.5]);
+    ctx.lineDashOffset = -t * ts * 2;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.setLineDash([]);
   }
   ctx.restore();
 }
