@@ -1,8 +1,7 @@
 // Корпус и интерьер корабля: пол, стены, двери, модули, экипаж, пожары, свет и воздух по комнатам.
 import { MODULES, TEMP_COMFORT_MAX, TEMP_COMFORT_MIN, TILE_WORLD, isModuleType, moduleSize, type ModuleType, type OwnShipView, type Physical } from '@starforce/shared';
 import { store, type ParsedLayout } from '../store';
-import { generateHull, HULL_PX, type HullSprite } from './gen/hull';
-import { SpriteCache } from './gen/kit';
+import { hullFor } from './gen/hullStore';
 import { DOOR_CELL, WALL_CELL, drawCell, drawPawn, drawStackArt, floorCell } from './kenney';
 import { drawModule, roundRect } from './modules';
 import { drawPaintedItem, drawPaintedPawn, drawPaintedTile } from './painted';
@@ -235,15 +234,19 @@ export interface HullDrawOpts {
   variant: 'open' | 'closed';
 }
 
-const hullCache = new SpriteCache<HullSprite>(40);
-
 /** Внешняя обшивка корабля: сгенерированный спрайт + факелы, огни и щит, которые меняются каждый кадр. */
 export function drawHull(ctx: CanvasRenderingContext2D, l: ParsedLayout, o: HullDrawOpts, t: number): void {
-  const sprite = hullCache.get(`${o.id}:${l.version}:${o.variant}:${o.own}`, () =>
-    generateHull({ w: l.w, h: l.h, tiles: l.grid.tiles, modules: l.modules, own: o.own, seed: o.id, variant: o.variant }),
-  );
+  const sprite = hullFor(`${o.id}:${o.variant}:${o.own}`, String(l.version), {
+    w: l.w,
+    h: l.h,
+    tiles: l.grid.tiles,
+    modules: l.modules,
+    own: o.own,
+    seed: o.id,
+    variant: o.variant,
+  });
   const ts = o.ts;
-  const k = ts / HULL_PX;
+  const k = ts / sprite.px;
   const X = (tx: number) => (tx - l.w / 2) * ts;
   const Y = (ty: number) => (ty - l.h / 2) * ts;
   ctx.save();

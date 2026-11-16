@@ -4,11 +4,15 @@
 // (вид «Звёздная система» и чужие корабли: комнаты снаружи не видны, как в оригинале).
 import { distanceInside, fbm, hash2, hex, makeCanvas, mix, rand, type RGB } from './kit';
 
-/** Пикселей на клетку в текстуре корпуса. */
+/** Пикселей на клетку в текстуре корпуса (максимум; у больших корпусов меньше — см. ниже). */
 export const HULL_PX = 40;
+/** Предел размера текстуры корпуса, пикселей: держит время генерации и память ограниченными. */
+const HULL_MAX_PIXELS = 650_000;
 
 export interface HullSprite {
-  canvas: HTMLCanvasElement;
+  canvas: HTMLCanvasElement | ImageBitmap;
+  /** Пикселей на клетку именно в этой текстуре. */
+  px: number;
   /** Сколько клеток слева и сверху от клетки (0,0) планировки занимает корпус. */
   offX: number;
   offY: number;
@@ -62,14 +66,14 @@ export function generateHull(inp: HullInput): HullSprite {
   const bow = Math.max(3, Math.min(9, fh * 0.6)) + 1;
   const offX = 4.2 - minX;
   const offY = 2.6 - minY;
-  const PX = HULL_PX;
+  const PX = Math.max(16, Math.min(HULL_PX, Math.floor(Math.sqrt(HULL_MAX_PIXELS / ((fw + 4.2 + bow + 1.2) * (fh + 5.2))))));
   const CW = Math.ceil((fw + 4.2 + bow + 1.2) * PX);
   const CH = Math.ceil((fh + 5.2) * PX);
   const T = (tx: number) => (tx + offX) * PX;
   const U = (ty: number) => (ty + offY) * PX;
 
   // --- Маски частей корпуса ---
-  const coverage = new Uint8Array(Math.ceil((fw + 4.2 + bow + 1.2) * HULL_PX) * Math.ceil((fh + 5.2) * HULL_PX));
+  const coverage = new Uint8Array(Math.ceil((fw + 4.2 + bow + 1.2) * PX) * Math.ceil((fh + 5.2) * PX));
   const part = (draw: (g: CanvasRenderingContext2D) => void) => {
     const [c, g] = makeCanvas(CW, CH);
     g.fillStyle = '#fff';
@@ -335,5 +339,5 @@ export function generateHull(inp: HullInput): HullSprite {
     { x: minX + fw * 0.12, y: maxY + pad + 1.75, color: '#34ff7a' },
     { x: maxX + bow - 0.5, y: midY, color: '#ffffff' },
   ];
-  return { canvas, offX, offY, nozzles, lights };
+  return { canvas, px: PX, offX, offY, nozzles, lights };
 }

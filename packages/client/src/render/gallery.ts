@@ -42,6 +42,20 @@ export function runGallery(canvas: HTMLCanvasElement): void {
   };
 
   const L = starterLayout();
+  // Замер: корпус самого большого корпуса (крейсер 32×17, заполненный) — он перегенерируется при каждой стройке.
+  const big = { w: 32, h: 17, tiles: new Array(32 * 17).fill('floor') as string[], modules: [['engine', 2, 4], ['engine', 2, 12]] as [string, number, number][] };
+  const t0 = performance.now();
+  generateHull({ ...big, own: true, seed: 1, variant: 'open' });
+  const t1 = performance.now();
+  generateHull({ ...L, own: true, seed: 2, variant: 'open' });
+  const t2 = performance.now();
+  stationSprite(99);
+  planetSpriteTime: {
+    const t3 = performance.now();
+    drawPlanetBody(ctx, 999, 'terran', -500, -500, 10, 0);
+    console.log(`timing: cruiser hull ${(t1 - t0).toFixed(0)} ms, scout hull ${(t2 - t1).toFixed(0)} ms, station ${(t3 - t2).toFixed(0)} ms, planet ${(performance.now() - t3).toFixed(0)} ms`);
+    break planetSpriteTime;
+  }
   const open = generateHull({ ...L, own: true, seed: 255, variant: 'open' });
   const closed = generateHull({ ...L, own: false, seed: 77, variant: 'closed' });
   const k = 0.55;

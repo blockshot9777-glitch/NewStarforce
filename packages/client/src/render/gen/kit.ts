@@ -1,10 +1,20 @@
 // Набор для процедурных спрайтов: шум, освещение карт высот, холсты, кэш.
 // Всё рисуется один раз в отдельный холст и дальше только масштабируется.
 
+/**
+ * Холст для генерации. В фоновом потоке (Web Worker) нет document — там OffscreenCanvas;
+ * для кода генераторов разницы нет, тип приводится к обычному холсту.
+ */
 export function makeCanvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
+  const cw = Math.max(1, Math.ceil(w));
+  const ch = Math.max(1, Math.ceil(h));
+  if (typeof document === 'undefined') {
+    const c = new OffscreenCanvas(cw, ch);
+    return [c as unknown as HTMLCanvasElement, c.getContext('2d') as unknown as CanvasRenderingContext2D];
+  }
   const c = document.createElement('canvas');
-  c.width = Math.max(1, Math.ceil(w));
-  c.height = Math.max(1, Math.ceil(h));
+  c.width = cw;
+  c.height = ch;
   return [c, c.getContext('2d')!];
 }
 
