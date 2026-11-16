@@ -3,7 +3,7 @@ import { CREATURES, RESOURCE_NAMES, SURFACE_BIOMES, type ExpeditionView, type Ph
 import { store } from '../store';
 import { drawPaintedItem, drawPaintedPawn, drawPaintedSprite } from './painted';
 import { renderTerrain } from './terrain';
-import { creatureSprite, shuttleSprite } from './gen/surface';
+import { creatureSprite, depositSprite, shuttleSprite } from './gen/surface';
 
 const RES_COLOR: Partial<Record<Resource, string>> = {
   metal: '#b0bec5',
@@ -150,23 +150,31 @@ function drawNodes(ctx: CanvasRenderingContext2D, e: ExpeditionView, L: PlanetLa
     ctx.beginPath();
     ctx.arc(x, y, ts * 0.8, 0, Math.PI * 2);
     ctx.fill();
-    const size = ts * 0.95;
-    const drawn = nd.resource !== 'credits' && drawPaintedItem(ctx, nd.resource as Physical, x - size / 2, y - size / 2, size);
-    if (!drawn) {
-      ctx.fillStyle = '#1b1f24';
-      ctx.strokeStyle = color;
-      ctx.lineWidth = Math.max(1, ts * 0.07);
+    // Сама залежь на грунте (с тенью), а не иконка предмета.
+    const size = ts * 1.55;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(x + ts * 0.12, y + ts * 0.16, size * 0.34, size * 0.26, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.drawImage(depositSprite(nd.resource, n.id), x - size / 2, y - size / 2, size, size);
+    // Бейдж: что это за ресурс и сколько осталось.
+    if (ts >= 12) {
+      const bs = ts * 0.42;
+      const bx = x + ts * 0.32;
+      const by = y + ts * 0.3;
+      ctx.fillStyle = 'rgba(6,22,30,0.85)';
       ctx.beginPath();
-      ctx.arc(x, y, ts * 0.36, 0, Math.PI * 2);
+      ctx.roundRect(bx - 2, by - 2, bs + ts * 0.5, bs + 4, 4);
       ctx.fill();
-      ctx.stroke();
-      ctx.font = `${Math.round(ts * 0.42)}px system-ui`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#fff';
-      ctx.fillText(RES_GLYPH[nd.resource] ?? '?', x, y + 1);
+      if (nd.resource === 'credits' || !drawPaintedItem(ctx, nd.resource as Physical, bx, by, bs)) {
+        ctx.font = `${Math.round(bs * 0.8)}px system-ui`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = color;
+        ctx.fillText(RES_GLYPH[nd.resource] ?? '?', bx, by);
+      }
+      label(ctx, String(n.amount), bx + bs + ts * 0.22, by + bs / 2, '#e0f7fa', Math.max(9, ts * 0.3));
     }
-    if (ts >= 12) label(ctx, String(n.amount), x + ts * 0.35, y + ts * 0.4, '#e0f7fa', Math.max(9, ts * 0.32));
     if (s.marked.includes(n.id)) {
       ctx.strokeStyle = '#ff9100';
       ctx.lineWidth = 2;

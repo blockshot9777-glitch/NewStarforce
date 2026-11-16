@@ -1,7 +1,7 @@
 // Спрайты поверхности планет: шаттл и местная жизнь. Голова/нос смотрят вверх (−y):
 // при отрисовке спрайт поворачивается по направлению движения.
 import type { CreatureType } from '@starforce/shared';
-import { fbm, hash2, hex, mix, shapeSprite, SpriteCache, type RGB } from './kit';
+import { fbm, hash2, hex, litSprite, mix, shapeSprite, SpriteCache, type RGB } from './kit';
 
 const cache = new SpriteCache<HTMLCanvasElement>(20);
 const S = 128;
@@ -299,4 +299,171 @@ export function creatureSprite(type: CreatureType): HTMLCanvasElement {
         );
     }
   });
+}
+
+// ---------- Залежи ресурсов на поверхности ----------
+
+const deposits = new SpriteCache<HTMLCanvasElement>(12);
+
+/** Залежь ресурса: то, что команда добывает (не иконка предмета, а сам объект на грунте). */
+export function depositSprite(resource: string, seed: number): HTMLCanvasElement {
+  const variant = seed % 3;
+  return deposits.get(`${resource}:${variant}`, () => {
+    const R = (k: number) => hash2(variant, k, 71);
+    switch (resource) {
+      case 'metal':
+        // Рудный выход: каменная глыба с блестящими металлическими прожилками.
+        return litSpriteBlob(variant, hex('#4a4440'), (u, v) =>
+          Math.abs(fbm(u * 6, v * 6, variant + 3, 3) - 0.5) < 0.018 ? { color: hex('#a9b3bd'), gloss: 1, h: 0.15 } : null,
+        );
+      case 'ice':
+        // Ледяные торосы: несколько граней-осколков, полупрозрачные, с бликом.
+        return shapeSprite(
+          S,
+          (g, s) => {
+            for (let i = 0; i < 6; i++) {
+              const a = R(i) * Math.PI * 2;
+              const r = s * (0.08 + R(i + 10) * 0.18);
+              const cx = s / 2 + Math.cos(a) * r;
+              const cy = s / 2 + Math.sin(a) * r;
+              const w = s * (0.08 + R(i + 20) * 0.08);
+              const h = s * (0.18 + R(i + 30) * 0.16);
+              g.save();
+              g.translate(cx, cy);
+              g.rotate(a);
+              g.beginPath();
+              g.moveTo(-w, 0);
+              g.lineTo(0, -h);
+              g.lineTo(w, 0);
+              g.lineTo(0, h * 0.4);
+              g.closePath();
+              g.fill();
+              g.restore();
+            }
+          },
+          (_u, _v, edge, base) => ({ h: base * 1.8 + edge * 6, color: mix(hex('#7fb3cf'), hex('#f0fbff'), Math.min(1, edge * 14)), alpha: 0.92, gloss: 1 }),
+          0.05,
+          6,
+        );
+      case 'crystals':
+        // Друза: толстые гранёные кристаллы веером из каменного основания, светятся изнутри.
+        return shapeSprite(
+          S,
+          (g, s) => {
+            g.beginPath();
+            g.ellipse(s * 0.5, s * 0.62, s * 0.22, s * 0.14, 0, 0, Math.PI * 2);
+            g.fill();
+            for (let i = 0; i < 6; i++) {
+              const a = -Math.PI / 2 + (i - 2.5) * 0.38 + (R(i) - 0.5) * 0.2;
+              const len = s * (0.24 + R(i + 5) * 0.16);
+              const wid = s * (0.055 + R(i + 9) * 0.03);
+              g.save();
+              g.translate(s * (0.5 + (i - 2.5) * 0.04), s * 0.62);
+              g.rotate(a + Math.PI / 2);
+              g.beginPath();
+              g.moveTo(-wid, 0);
+              g.lineTo(-wid, -len * 0.75);
+              g.lineTo(0, -len);
+              g.lineTo(wid, -len * 0.75);
+              g.lineTo(wid, 0);
+              g.closePath();
+              g.fill();
+              g.restore();
+            }
+          },
+          (u, v, edge, base) => {
+            const rock = v > 0.58 && Math.hypot((u - 0.5) / 0.22, (v - 0.62) / 0.14) < 1;
+            if (rock) return { h: base * 1.2, color: mix(hex('#3a3436'), hex('#5a5254'), fbm(u * 9, v * 9, 4, 3)), alpha: 1, gloss: 0.1 };
+            const inner = Math.min(1, edge * 18);
+            return { h: base * 1.6 + edge * 8, color: mix(hex('#4b2275'), hex('#e6b3ff'), inner), alpha: 1, gloss: 1, emit: [Math.round(60 * inner), 8, Math.round(100 * inner)] };
+          },
+          0.03,
+          6,
+        );
+      case 'food':
+        // Плодовый куст: крона листьев и оранжевые плоды.
+        return litSpriteBlob(variant + 5, hex('#2f5a22'), (u, v) => {
+          const fruit = hash2(Math.floor(u * 9), Math.floor(v * 9), variant + 9) > 0.86 && Math.hypot(((u * 9) % 1) - 0.5, ((v * 9) % 1) - 0.5) < 0.3;
+          if (fruit) return { color: hex('#ff9a2e'), gloss: 0.7, h: 0.4 };
+          return { color: mix(hex('#24481b'), hex('#5f9a35'), fbm(u * 10, v * 10, variant, 3)), gloss: 0.15, h: fbm(u * 12, v * 12, variant + 1, 3) * 0.6 };
+        });
+      case 'biomass':
+        // Живая древесина: узел, из которого во все стороны расходятся изогнутые корни.
+        return shapeSprite(
+          S,
+          (g, s) => {
+            for (let i = 0; i < 7; i++) {
+              const a = (i / 7) * Math.PI * 2 + R(i) * 0.5;
+              const bend = (R(i + 3) - 0.5) * 1.2;
+              const len = s * (0.3 + R(i + 6) * 0.12);
+              g.lineWidth = s * (0.05 + R(i + 9) * 0.03);
+              g.lineCap = 'round';
+              g.strokeStyle = '#fff';
+              g.beginPath();
+              g.moveTo(s / 2, s / 2);
+              g.quadraticCurveTo(s / 2 + Math.cos(a + bend) * len * 0.6, s / 2 + Math.sin(a + bend) * len * 0.6, s / 2 + Math.cos(a) * len, s / 2 + Math.sin(a) * len);
+              g.stroke();
+            }
+            g.beginPath();
+            g.arc(s / 2, s / 2, s * 0.12, 0, Math.PI * 2);
+            g.fill();
+          },
+          (u, v, edge, base) => {
+            const glow = hash2(Math.floor(u * 24), Math.floor(v * 24), 4) > 0.965;
+            const bark = fbm(u * 14, v * 14, 5, 3);
+            return { h: base * 1.4 + edge * 5 + bark * 0.3, color: glow ? hex('#b8ff5a') : mix(hex('#3a2c1c'), hex('#6a8a36'), bark), alpha: 1, gloss: 0.25, emit: glow ? [70, 120, 10] : undefined };
+          },
+          0.04,
+          5,
+        );
+      case 'water':
+        // Родник: чаша воды в каменном кольце.
+        return litSprite(S, S, (u, v) => {
+          const d = Math.hypot(u - 0.5, v - 0.5);
+          const rim = 0.3 + 0.03 * Math.sin(Math.atan2(v - 0.5, u - 0.5) * 7 + variant);
+          if (d > rim + 0.08) return { h: -1, color: [0, 0, 0], alpha: 0 };
+          if (d > rim) return { h: (rim + 0.08 - d) * 12, color: mix(hex('#4d4a45'), hex('#7a756c'), fbm(u * 9, v * 9, 2, 3)), alpha: 1, gloss: 0.1 };
+          const ripple = Math.sin(d * 70) * 0.05;
+          return { h: -0.3 + ripple, color: mix(hex('#0f3a5c'), hex('#3fa1d8'), d / rim), alpha: 1, gloss: 1 };
+        }, 4);
+      default:
+        // Тайник Машин: металлический контейнер с жёлтыми полосами и огоньком.
+        return shapeSprite(
+          S,
+          (g, s) => {
+            g.beginPath();
+            g.roundRect(s * 0.2, s * 0.26, s * 0.6, s * 0.48, s * 0.06);
+            g.fill();
+          },
+          (u, v, _e, base) => {
+            const stripe = Math.abs(((u + v) * 8) % 1) < 0.5 && (v < 0.33 || v > 0.67);
+            const lamp = Math.hypot(u - 0.72, v - 0.5) < 0.035;
+            return { h: base * 1.6, color: lamp ? hex('#ff3b30') : stripe ? hex('#f2b400') : hex('#4b525a'), alpha: 1, gloss: 0.5, emit: lamp ? [200, 30, 20] : undefined };
+          },
+          0.08,
+          5,
+        );
+    }
+  });
+}
+
+/** Округлая «куча» (глыба, крона) с цветом по умолчанию и точечными деталями поверх. */
+function litSpriteBlob(seed: number, color: RGB, detail: (u: number, v: number) => { color: RGB; gloss: number; h?: number } | null): HTMLCanvasElement {
+  return litSprite(
+    S,
+    S,
+    (u, v) => {
+      const dx = u - 0.5;
+      const dy = v - 0.5;
+      const d = Math.hypot(dx, dy);
+      const a = Math.atan2(dy, dx);
+      const rad = 0.3 + 0.07 * (fbm(Math.cos(a) * 1.5 + seed, Math.sin(a) * 1.5, seed, 3) - 0.5) * 2;
+      if (d > rad) return { h: -1, color: [0, 0, 0], alpha: 0 };
+      const dome = Math.sqrt(Math.max(0, 1 - (d / rad) ** 2)) * 1.5 + fbm(u * 7, v * 7, seed + 1, 4) * 0.5;
+      const det = detail(u, v);
+      const c = det?.color ?? [color[0] * (0.8 + fbm(u * 9, v * 9, seed, 3) * 0.4), color[1] * (0.8 + fbm(u * 9, v * 9, seed, 3) * 0.4), color[2] * (0.8 + fbm(u * 9, v * 9, seed, 3) * 0.4)];
+      return { h: dome + (det?.h ?? 0), color: c as RGB, alpha: 1, gloss: det?.gloss ?? 0.1 };
+    },
+    5,
+  );
 }

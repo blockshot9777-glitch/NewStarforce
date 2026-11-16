@@ -3,7 +3,7 @@
 import { BIOME_TYPES, STARTER_GLYPHS, STARTER_LAYOUT, type NpcType, type Resource } from '@starforce/shared';
 import { generateHull } from './gen/hull';
 import { asteroidSprite, crateSprite, drawPlanetBody, npcSprite, stationSprite } from './gen/space';
-import { creatureSprite, shuttleSprite } from './gen/surface';
+import { creatureSprite, depositSprite, shuttleSprite } from './gen/surface';
 
 function starterLayout() {
   const w = 16;
@@ -89,4 +89,7 @@ export function runGallery(canvas: HTMLCanvasElement): void {
   (['vine', 'stalker', 'sporeling', 'drone_scout', 'ice_crawler', 'magma_beetle', 'beast'] as const).forEach((t, i) =>
     ctx.drawImage(creatureSprite(t), 190 + i * 150, y + 20, 130, 130),
   );
+  y += 180;
+  title('Залежи на поверхности: металл, лёд, кристаллы, еда, биомасса, вода, тайник Машин', 20, y);
+  ['metal', 'ice', 'crystals', 'food', 'biomass', 'water', 'credits'].forEach((r, i) => ctx.drawImage(depositSprite(r, i), 20 + i * 150, y + 10, 130, 130));
 }
