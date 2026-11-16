@@ -1,5 +1,5 @@
 import './style.css';
-import { isModuleType, moduleSize, validateBuild, type BuildKind, type Ship } from '@starforce/shared';
+import { RESOURCE_NAMES, buildCost, isModuleType, moduleSize, validateBuild, type BuildKind, type Resource, type Ship } from '@starforce/shared';
 import { connect, savedName, send } from './net';
 import { kenneyEnabled, loadKenney } from './render/kenney';
 import { loadSprites } from './render/modules';
@@ -111,15 +111,38 @@ function drawToolPreview(): void {
   }
   const h = store.hoverTile;
   if (h && ship && store.tool !== 'remove' && store.tool !== 'urgent' && store.tool !== 'stockpile' && store.tool !== 'unstockpile') {
-    const err = validateBuild(ship, h.x, h.y, store.tool as BuildKind);
-    const text = err ? `${kindName(store.tool as BuildKind)}: ${err}` : kindName(store.tool as BuildKind);
-    ctx.font = '13px system-ui';
+    const kind = store.tool as BuildKind;
+    const err = validateBuild(ship, h.x, h.y, kind);
+    // Цена за всю протяжку (модуль — одна штука); нехватка в запасе — красным.
+    const n = isModuleType(kind) ? 1 : Math.max(1, cells.length);
+    const cost = Object.entries(buildCost(kind)) as [Resource, number][];
+    const res = store.snap?.ship?.res;
+    const lines: { text: string; color: string }[] = [{ text: n > 1 ? `${kindName(kind)} ×${n}` : kindName(kind), color: '#80deea' }];
+    if (cost.length)
+      lines.push({
+        text: cost.map(([r, v]) => `${RESOURCE_NAMES[r]} ${Math.round(v * n)}`).join(' · '),
+        color: cost.some(([r, v]) => (res?.[r] ?? 0) < v * n) ? '#ff8a80' : '#d8f3f8',
+      });
+    if (err) lines.push({ text: err, color: '#ff8a80' });
+    ctx.font = '600 12px system-ui';
+    const wBox = Math.max(...lines.map((l) => ctx.measureText(l.text).width)) + 18;
+    const hBox = lines.length * 17 + 10;
+    const bx = Math.min(W - wBox - 8, store.mouse.x + 18);
+    const by = Math.min(H - hBox - 8, store.mouse.y + 20);
+    ctx.fillStyle = 'rgba(6,18,26,0.88)';
+    ctx.strokeStyle = err ? 'rgba(255,82,82,0.7)' : 'rgba(0,188,212,0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, wBox, hBox, 7);
+    ctx.fill();
+    ctx.stroke();
     ctx.textAlign = 'left';
-    ctx.fillStyle = err ? '#ff8a80' : '#b9f6ca';
-    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
-    ctx.lineWidth = 3;
-    ctx.strokeText(text, store.mouse.x + 16, store.mouse.y + 24);
-    ctx.fillText(text, store.mouse.x + 16, store.mouse.y + 24);
+    ctx.textBaseline = 'top';
+    lines.forEach((l, k) => {
+      ctx.font = k === 0 ? '700 12px system-ui' : '12px system-ui';
+      ctx.fillStyle = l.color;
+      ctx.fillText(l.text, bx + 9, by + 6 + k * 17);
+    });
   }
 }
 
