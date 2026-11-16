@@ -268,7 +268,16 @@ function onMouseUp(e: MouseEvent): void {
 function onWheel(e: WheelEvent): void {
   e.preventDefault();
   if (store.mode === 'planet') {
-    store.planetZoom = Math.max(14, Math.min(72, store.planetZoom * Math.exp(-e.deltaY * 0.0015)));
+    // Масштаб к курсору: клетка под мышью остаётся под мышью (как в RimWorld/Cosmoteer).
+    const before = store.planetZoom;
+    const after = Math.max(14, Math.min(72, before * Math.exp(-e.deltaY * 0.0015)));
+    if (planetView && after !== before) {
+      const cx = (store.mouse.x - planetView.ox) / before;
+      const cy = (store.mouse.y - planetView.oy) / before;
+      store.planetCam.x = cx - (cx - store.planetCam.x) * (before / after);
+      store.planetCam.y = cy - (cy - store.planetCam.y) * (before / after);
+    }
+    store.planetZoom = after;
     return;
   }
   const factor = Math.exp(-e.deltaY * 0.0015);
