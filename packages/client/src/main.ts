@@ -10,7 +10,7 @@ import { initAudio, playJump, toggleMute, updateLoops } from './audio';
 import { runGallery } from './render/gallery';
 import { PostFx } from './render/post';
 import { interp, screenToWorld, store, toast, worldToTile } from './store';
-import { initUi, kindName, renderUi, setMode } from './ui';
+import { initUi, kindName, renderTooltip, renderUi, setMode } from './ui';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -429,6 +429,7 @@ function drawFrame(now: number): void {
   if (landing && terrain) {
     planetView = drawPlanetSurface(ctx, W, H, landing, terrain, now / 1000);
     renderUi();
+    renderTooltip();
     return;
   }
   // Рельеф высадок считается заранее в фоне — к нажатию «На поверхность» карта уже готова.
@@ -447,6 +448,7 @@ function drawFrame(now: number): void {
   drawToolPreview();
   drawMinimap(ctx, W - 190, 70, 180);
   renderUi();
+  renderTooltip();
 }
 
 // ---------- Вход ----------

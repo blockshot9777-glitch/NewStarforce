@@ -24,6 +24,7 @@ import {
   type OwnShipView,
   type Resource,
   type Resources,
+  moduleSize,
 } from '@starforce/shared';
 import { send } from './net';
 import { store, toast, type Mode } from './store';
@@ -676,4 +677,66 @@ function renderLog(): void {
     toastEl.classList.remove('hidden');
     setHtml(toastEl, esc(t.text));
   } else toastEl.classList.add('hidden');
+}
+
+// ---------- Подсказка под курсором (как в RimWorld/ONI): что это и в каком состоянии ----------
+
+let lastTip = '';
+
+/** Вызывается каждый кадр: содержимое пересобирается, только если изменилось. */
+export function renderTooltip(): void {
+  const el = document.getElementById('tooltip');
+  if (!el) return;
+  const own = store.snap?.ship;
+  const h = store.hoverTile;
+  const l = own ? store.layouts.get(own.id) : undefined;
+  if (!own || !h || !l || store.mode !== 'ship' || store.tool || store.mouse.down) {
+    if (lastTip) {
+      el.classList.add('hidden');
+      lastTip = '';
+    }
+    return;
+  }
+  const parts: string[] = [];
+  for (const c of own.crew) {
+    if (Math.round(c.x) !== h.x || Math.round(c.y) !== h.y) continue;
+    const doing = c.draft ? 'ждёт приказа' : `${STATE_NAMES[c.state]}${c.job ? ` · ${JOB_NAMES[c.job]}` : ''}`;
+    parts.push(
+      `<div class="tip-title">${c.robot ? '🤖 ' : ''}${esc(c.name)}</div><div class="muted">${doing}</div>` +
+        `<div class="tip-bars"><span>❤</span>${bar(c.health, '#69f0ae')}${c.robot ? '' : `<span>🍞</span>${bar(c.food, '#ffb74d')}<span>☾</span>${bar(c.rest, '#90caf9')}`}</div>` +
+        (c.carry ? `<div class="muted">несёт: ${esc(RESOURCE_NAMES[c.carry.resource])} ×${fmt(c.carry.amount)}</div>` : ''),
+    );
+  }
+  for (const m of own.modules) {
+    const [mw, mh] = moduleSize(m.type);
+    if (h.x < m.x || h.y < m.y || h.x >= m.x + mw || h.y >= m.y + mh) continue;
+    const def = MODULES[m.type];
+    const status = m.hp <= 0 ? '<span class="bad">разрушен</span>' : !m.enabled ? '<span class="warn">выключен</span>' : def.demand > 0 && !m.powered ? '<span class="bad">нет энергии</span>' : def.output ? '<span class="ok">даёт энергию</span>' : m.active ? '<span class="ok">работает</span>' : '<span class="muted">ожидает</span>';
+    const grow = m.type === 'hydroponics' ? ` · урожай ${Math.round(m.growth * 100)}%` : '';
+    parts.push(`<div class="tip-title">${esc(def.name)}</div><div>${status}${grow} · прочность ${fmt(m.hp)}/${fmt(def.maxHp)}</div><div class="muted tip-desc">${esc(def.desc)}</div>`);
+  }
+  for (const st of own.stacks) if (st.x === h.x && st.y === h.y) parts.push(`<div>${esc(RESOURCE_NAMES[st.resource])} ×${fmt(st.amount)}</div>`);
+  const room = l.rooms.roomOf[h.y * l.w + h.x];
+  if (room >= 0) {
+    const air = Math.round((own.roomAir[room] ?? 0) * 100);
+    const temp = Math.round(own.roomTemp[room] ?? 21);
+    const vented = l.rooms.rooms[room].vented;
+    parts.push(`<div class="muted tip-room">Отсек: воздух <span class="${air < 50 ? 'bad' : air < 80 ? 'warn' : 'ok'}">${air}%</span> · ${temp}°${vented ? ' · <span class="bad">пробоина</span>' : ''}</div>`);
+  }
+  const html = parts.join('<div class="tip-sep"></div>');
+  if (!html) {
+    if (lastTip) {
+      el.classList.add('hidden');
+      lastTip = '';
+    }
+    return;
+  }
+  if (html !== lastTip) {
+    el.innerHTML = html;
+    lastTip = html;
+  }
+  el.classList.remove('hidden');
+  const x = Math.min(window.innerWidth - el.offsetWidth - 8, store.mouse.x + 18);
+  const y = Math.min(window.innerHeight - el.offsetHeight - 8, store.mouse.y + 18);
+  el.style.transform = `translate(${x}px, ${y}px)`;
 }

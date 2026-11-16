@@ -799,3 +799,43 @@ body:has(#crew:not(.hidden)) #log {
 body:has(#login:not(.hidden)) #bottom {
   display: none;
 }
+
+/* Подсказка под курсором. */
+#tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  max-width: 280px;
+  padding: 7px 10px;
+  pointer-events: none;
+  font-size: 12px;
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--edge-soft);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+#tooltip .tip-title {
+  font-weight: 700;
+  color: var(--accent);
+}
+#tooltip .tip-desc {
+  margin-top: 2px;
+  font-size: 11px;
+}
+#tooltip .tip-bars {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+}
+#tooltip .tip-sep {
+  height: 1px;
+  margin: 5px 0;
+  background: rgba(0, 188, 212, 0.2);
+}
+#tooltip .bad {
+  color: var(--bad);
+}
