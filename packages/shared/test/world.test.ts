@@ -237,7 +237,12 @@ describe('мир', () => {
     expect(w.command(p.id, { c: 'expedition', planetId: planet.id, crewIds: crew })).toBeNull();
     expect(ship.crew.length).toBe(2);
     expect(w.command(p.id, { c: 'expedition', planetId: planet.id, crewIds: ship.crew.map((c) => c.id) })).toMatch(/остаться/);
-    stepUntil(w, () => w.state.expeditions.length === 0, 60);
+    // Высадка не кончается сама: команда работает, пока её не отзовут.
+    stepUntil(w, () => false, 20);
+    expect(w.state.expeditions.length).toBe(1);
+    const e = w.state.expeditions[0];
+    expect(w.command(p.id, { c: 'recall', expeditionId: e.id })).toBeNull();
+    stepUntil(w, () => w.state.expeditions.length === 0, 90);
     expect(w.state.expeditions.length).toBe(0);
     // Ледяная пустошь опасна слабо, но член экипажа мог погибнуть — тогда корабль всё равно цел.
     expect(ship.crew.length).toBeGreaterThanOrEqual(2);

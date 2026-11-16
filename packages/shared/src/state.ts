@@ -1,5 +1,5 @@
 // Состояние мира на сервере. Только простые данные (без классов), чтобы всё легко сохранялось в JSON.
-import type { Biome, BuildKind, HullClass, ModuleType, NpcType, Physical, Resource, Resources, Tile } from './defs';
+import type { Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, Tile } from './defs';
 
 export interface Vec {
   x: number;
@@ -261,6 +261,56 @@ export interface Projectile {
   life: number;
 }
 
+/** Ресурсная точка на поверхности планеты. */
+export interface SurfaceNode {
+  id: number;
+  x: number;
+  y: number;
+  /** Индекс в SURFACE_BIOMES[biome].nodes. */
+  kind: number;
+  amount: number;
+  /** Накопленная работа текущего цикла добычи, секунды. */
+  work: number;
+}
+
+export interface SurfaceCreature {
+  id: number;
+  type: CreatureType;
+  x: number;
+  y: number;
+  path: Vec[];
+  hp: number;
+  cooldown: number;
+  repath: number;
+  targetCrewId: number | null;
+}
+
+/** Что делает член экипажа на поверхности. */
+export interface SurfaceActor {
+  crewId: number;
+  task: 'idle' | 'gather' | 'move' | 'flee' | 'board' | 'boarded';
+  nodeId: number | null;
+  /** Приказ игрока «иди сюда». */
+  moveTo: Vec | null;
+  cooldown: number;
+}
+
+export interface Surface {
+  w: number;
+  h: number;
+  /** По символу на клетку: '.' земля, ',' неровная земля, '#' непроходимо, '~' жидкость. */
+  terrain: string;
+  shuttle: Vec;
+  nodes: SurfaceNode[];
+  creatures: SurfaceCreature[];
+  actors: SurfaceActor[];
+  /** Ресурсные точки, помеченные игроком как важные. */
+  marked: number[];
+  elapsed: number;
+  spawnTimer: number;
+}
+
+/** Высадка на планету: команда работает на карте поверхности, пока её не отзовут к шаттлу. */
 export interface Expedition {
   id: number;
   shipId: number;
@@ -268,9 +318,10 @@ export interface Expedition {
   systemId: number;
   planetId: number;
   crew: Crew[];
-  timeLeft: number;
-  rollTimer: number;
   loot: Partial<Resources>;
+  surface: Surface;
+  /** Игрок отозвал команду: все идут к шаттлу. */
+  returning: boolean;
 }
 
 export interface Player {

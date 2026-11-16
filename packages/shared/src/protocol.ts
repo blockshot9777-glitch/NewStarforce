@@ -1,9 +1,9 @@
 // Сообщения между клиентом и сервером. Клиент только просит — всё решает сервер.
 import type { Alert } from './alerts';
-import type { Biome, BuildKind, HullClass, ModuleType, NpcType, Physical, Resource, Resources } from './defs';
-import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry, WorkPriority } from './state';
+import type { Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources } from './defs';
+import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry, SurfaceActor, WorkPriority } from './state';
 
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 export type Command =
   | { c: 'move'; x: number; y: number }
@@ -22,6 +22,8 @@ export type Command =
   | { c: 'clearOrder'; crewId: number }
   | { c: 'expedition'; planetId: number; crewIds: number[] }
   | { c: 'recall'; expeditionId: number }
+  | { c: 'landMove'; expeditionId: number; crewId: number; x: number; y: number }
+  | { c: 'landMark'; expeditionId: number; nodeId: number }
   | { c: 'trade'; resource: Resource; amount: number }
   | { c: 'recruit'; robot: boolean }
   | { c: 'upgrade' }
@@ -181,14 +183,29 @@ export interface MarketView {
   refreshIn: number;
 }
 
+export interface SurfaceView {
+  w: number;
+  h: number;
+  /** Рельеф (см. Surface.terrain) — только в первом снимке после начала высадки, дальше null. */
+  terrain: string | null;
+  shuttle: { x: number; y: number };
+  elapsed: number;
+  marked: number[];
+  nodes: { id: number; x: number; y: number; kind: number; amount: number }[];
+  creatures: { id: number; type: CreatureType; x: number; y: number; hp: number }[];
+  crew: { id: number; name: string; robot: boolean; x: number; y: number; health: number; task: SurfaceActor['task'] }[];
+}
+
 export interface ExpeditionView {
   id: number;
   planetId: number;
   planetName: string;
   biome: Biome;
-  crew: { id: number; name: string; health: number }[];
-  timeLeft: number;
   loot: Partial<Resources>;
+  returning: boolean;
+  /** Все в шаттле, но корабль улетел из системы. */
+  waitingForShip: boolean;
+  surface: SurfaceView;
 }
 
 export interface Snapshot {

@@ -5,6 +5,7 @@ import { kenneyEnabled, loadKenney } from './render/kenney';
 import { loadSprites } from './render/modules';
 import { loadPainted } from './render/painted';
 import { drawMinimap, drawSpace, type SpaceRenderResult } from './render/space';
+import { drawPlanetSurface, type PlanetLayout } from './render/planet';
 import { interp, screenToWorld, store, toast, worldToTile } from './store';
 import { initUi, kindName, renderUi, setMode } from './ui';
 
@@ -13,6 +14,7 @@ const ctx = canvas.getContext('2d')!;
 let W = 0;
 let H = 0;
 let last: SpaceRenderResult = { interior: null };
+let planetView: PlanetLayout | null = null;
 
 const ZOOM = { ship: [1.6, 7], system: [0.06, 2.2] } as const;
 
@@ -153,7 +155,38 @@ function onMouseMove(e: MouseEvent): void {
   store.hoverTile = tileInOwnShip();
 }
 
+/** Клик по поверхности: ЛКМ — выбрать человека или пометить ресурс, ПКМ — отправить выбранного в точку. */
+function onPlanetMouseDown(e: MouseEvent): void {
+  const landing = store.snap?.expeditions.find((x) => x.id === store.landingId);
+  if (!landing || !planetView) return;
+  const { ox, oy, ts } = planetView;
+  const fx = (e.clientX - ox) / ts - 0.5;
+  const fy = (e.clientY - oy) / ts - 0.5;
+  const tx = Math.round(fx);
+  const ty = Math.round(fy);
+  const s = landing.surface;
+  if (e.button === 2) {
+    if (store.planetCrew === null) return;
+    send({ c: 'landMove', expeditionId: landing.id, crewId: store.planetCrew, x: tx, y: ty });
+    return;
+  }
+  if (e.button !== 0) return;
+  const crew = s.crew.find((c) => c.task !== 'boarded' && Math.hypot(c.x - fx, c.y - fy) < 0.7);
+  if (crew) {
+    store.planetCrew = store.planetCrew === crew.id ? null : crew.id;
+  } else {
+    const node = s.nodes.find((n) => n.x === tx && n.y === ty);
+    if (node) send({ c: 'landMark', expeditionId: landing.id, nodeId: node.id });
+    else store.planetCrew = null;
+  }
+  renderUi(true);
+}
+
 function onMouseDown(e: MouseEvent): void {
+  if (store.mode === 'planet') {
+    onPlanetMouseDown(e);
+    return;
+  }
   if (e.button === 2) {
     if (store.tool) store.tool = null;
     else {
@@ -208,6 +241,7 @@ function onMouseUp(e: MouseEvent): void {
 
 function onWheel(e: WheelEvent): void {
   e.preventDefault();
+  if (store.mode === 'planet') return;
   const factor = Math.exp(-e.deltaY * 0.0015);
   store.zoomTarget *= factor;
   const [lo, hi] = ZOOM[store.mode];
@@ -234,6 +268,15 @@ function onKey(e: KeyboardEvent): void {
       e.preventDefault();
       setMode(store.mode === 'ship' ? 'system' : 'ship');
       break;
+    case 'Escape':
+      if (store.mode === 'planet') {
+        setMode('ship');
+        break;
+      }
+      store.tool = null;
+      store.selectedId = null;
+      store.galaxyOpen = false;
+      break;
     case 'b':
     case 'и':
       store.panel = store.panel === 'build' ? null : 'build';
@@ -251,11 +294,6 @@ function onKey(e: KeyboardEvent): void {
     case 'g':
     case 'п':
       store.galaxyOpen = !store.galaxyOpen;
-      break;
-    case 'Escape':
-      store.tool = null;
-      store.selectedId = null;
-      store.galaxyOpen = false;
       break;
     case 'Enter':
       document.getElementById('chat-input')!.focus();
@@ -294,6 +332,13 @@ function frame(now: number): void {
   store.mouse.wx = w.x;
   store.mouse.wy = w.y;
   store.hoverTile = tileInOwnShip();
+  const landing = store.mode === 'planet' ? snap.expeditions.find((e) => e.id === store.landingId) : undefined;
+  const terrain = landing && store.terrains.get(landing.id);
+  if (landing && terrain) {
+    planetView = drawPlanetSurface(ctx, W, H, landing, terrain, now / 1000);
+    renderUi();
+    return;
+  }
   last = drawSpace(ctx, W, H, now / 1000);
   drawToolPreview();
   drawMinimap(ctx, W - 190, 70, 180);

@@ -13,7 +13,7 @@ import {
   type Tile,
 } from '@starforce/shared';
 
-export type Mode = 'ship' | 'system';
+export type Mode = 'ship' | 'system' | 'planet';
 export type Tool = BuildKind | 'remove' | 'urgent' | 'stockpile' | 'unstockpile' | null;
 
 export interface ParsedLayout extends LayoutView {
@@ -34,6 +34,12 @@ export const store = {
   toast: null as { text: string; at: number } | null,
 
   mode: 'ship' as Mode,
+  /** Какая высадка открыта в режиме «планета». */
+  landingId: null as number | null,
+  /** Выбранный на поверхности член экипажа. */
+  planetCrew: null as number | null,
+  /** Рельеф высадок: сервер шлёт его один раз. */
+  terrains: new Map<number, string>(),
   zoom: 4,
   zoomTarget: 4,
   shipZoom: 4,
@@ -68,6 +74,13 @@ export function applySnapshot(s: Snapshot): void {
   store.snap = s;
   store.snapAt = now;
   for (const [id, l] of Object.entries(s.layouts)) store.layouts.set(Number(id), parseLayout(l));
+  for (const e of s.expeditions) if (e.surface.terrain) store.terrains.set(e.id, e.surface.terrain);
+  // Высадка закончилась — уходим с экрана планеты.
+  if (store.mode === 'planet' && !s.expeditions.some((e) => e.id === store.landingId)) {
+    store.mode = 'ship';
+    store.landingId = null;
+    store.planetCrew = null;
+  }
   for (const fx of s.fx) store.fx.push({ fx, born: now });
   for (const e of s.log) store.log.push({ ...e, at: now });
   for (const c of s.chat) store.chat.push({ ...c, at: now });

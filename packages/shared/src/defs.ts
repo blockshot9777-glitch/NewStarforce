@@ -693,9 +693,150 @@ export const BIOMES: Record<Biome, BiomeDef> = {
 };
 export const BIOME_TYPES = Object.keys(BIOMES) as Biome[];
 
-export const EXPEDITION_SECONDS = 40;
-export const EXPEDITION_ROLL_SECONDS = 5;
 export const EXPEDITION_MAX_CREW = 4;
+
+// ---------- Поверхность планет ----------
+// Высадка — отдельная карта: команда сама добывает и отстреливается, игрок направляет.
+
+export const SURFACE_W = 44;
+export const SURFACE_H = 30;
+/** Скорость шага на поверхности, клеток в секунду. */
+export const SURFACE_CREW_SPEED = 2.5;
+/** Сколько единиц ресурса даёт один цикл добычи. */
+export const SURFACE_GATHER_CHUNK = 2;
+/** Множитель времени цикла добычи (баланс: высадка выгодна, но не заменяет рынок). */
+export const SURFACE_WORK_MULT = 2.5;
+/** Множитель урона местной жизни (баланс). */
+export const CREATURE_DAMAGE_MULT = 1.3;
+/** Ручное оружие экипажа: урон = база + навык боя × множитель. */
+export const CREW_GUN_DAMAGE = 4;
+export const CREW_GUN_SKILL_MULT = 0.6;
+export const CREW_GUN_RANGE = 4.5;
+export const CREW_GUN_COOLDOWN = 1.2;
+/** Ниже этого здоровья человек отходит к шаттлу и лечится там. */
+export const SURFACE_FLEE_HEALTH = 40;
+export const SURFACE_SHUTTLE_HEAL = 3;
+/** Вокруг шаттла хищники не нападают (турели посадочного модуля). */
+export const SHUTTLE_SAFE_RADIUS = 2.5;
+/** Новые хищники приходят всё чаще: интервал = база / (угроза + 0.3), сжимается со временем до минимума. */
+export const SURFACE_SPAWN_BASE = 25;
+export const SURFACE_SPAWN_MIN = 12;
+/** За сколько секунд на планете интервал прихода хищников сжимается вдвое. */
+export const SURFACE_ESCALATION_SECONDS = 300;
+
+export type CreatureType = 'vine' | 'stalker' | 'sporeling' | 'drone_scout' | 'ice_crawler' | 'magma_beetle' | 'beast';
+
+export interface CreatureDef {
+  name: string;
+  hp: number;
+  damage: number;
+  cooldown: number;
+  /** Клеток в секунду. */
+  speed: number;
+  /** С какой дистанции замечает людей, клеток. */
+  aggro: number;
+  loot: Partial<Record<Resource, [number, number]>>;
+  color: string;
+}
+
+export const CREATURES: Record<CreatureType, CreatureDef> = {
+  vine: { name: 'Хищная лиана', hp: 40, damage: 9, cooldown: 1.5, speed: 1.2, aggro: 5, loot: { biomass: [3, 6] }, color: '#7cb342' },
+  stalker: { name: 'Рощевой охотник', hp: 30, damage: 7, cooldown: 1.1, speed: 2.6, aggro: 8, loot: { biomass: [2, 4], food: [1, 3] }, color: '#558b2f' },
+  sporeling: { name: 'Спорник', hp: 22, damage: 6, cooldown: 1.3, speed: 1.8, aggro: 6, loot: { biomass: [2, 5] }, color: '#c0ca33' },
+  drone_scout: { name: 'Сторожевой дрон', hp: 35, damage: 8, cooldown: 1.0, speed: 2.4, aggro: 9, loot: { metal: [3, 6], crystals: [0, 2] }, color: '#ef5350' },
+  ice_crawler: { name: 'Ледяной ползун', hp: 45, damage: 7, cooldown: 1.6, speed: 1.4, aggro: 5, loot: { ice: [3, 6] }, color: '#81d4fa' },
+  magma_beetle: { name: 'Магмовый жук', hp: 50, damage: 10, cooldown: 1.6, speed: 1.6, aggro: 6, loot: { crystals: [1, 3] }, color: '#ff7043' },
+  beast: { name: 'Местный зверь', hp: 30, damage: 6, cooldown: 1.2, speed: 2.2, aggro: 5, loot: { food: [2, 5] }, color: '#a1887f' },
+};
+
+export interface SurfaceNodeDef {
+  name: string;
+  resource: Resource;
+  amount: [number, number];
+  /** Секунд работы на один цикл добычи при среднем навыке. */
+  work: number;
+  skill: 'botany' | 'engineering';
+  weight: number;
+}
+
+export interface SurfaceBiomeDef {
+  ground: string;
+  rough: string;
+  block: string;
+  liquid: string;
+  blockName: string;
+  liquidName: string;
+  /** Доля непроходимых клеток (скалы, заросли) и жидкости. */
+  blockDensity: number;
+  liquidDensity: number;
+  nodes: SurfaceNodeDef[];
+  nodeCount: number;
+  creatures: CreatureType[];
+}
+
+export const SURFACE_BIOMES: Record<Biome, SurfaceBiomeDef> = {
+  terran: {
+    ground: '#2f4a2c', rough: '#3d5a34', block: '#5d6b5a', liquid: '#1f4f78', blockName: 'Скалы', liquidName: 'Озеро',
+    blockDensity: 0.12, liquidDensity: 0.08, nodeCount: 14, creatures: ['beast'],
+    nodes: [
+      { name: 'Родник', resource: 'water', amount: [15, 30], work: 3, skill: 'engineering', weight: 3 },
+      { name: 'Дикие злаки', resource: 'food', amount: [10, 20], work: 4, skill: 'botany', weight: 3 },
+      { name: 'Рощица', resource: 'biomass', amount: [10, 20], work: 4, skill: 'botany', weight: 2 },
+      { name: 'Рудный выход', resource: 'metal', amount: [10, 25], work: 6, skill: 'engineering', weight: 2 },
+    ],
+  },
+  jungle: {
+    ground: '#1f3a1d', rough: '#29492a', block: '#14301a', liquid: '#2b4d3a', blockName: 'Живые заросли', liquidName: 'Трясина',
+    blockDensity: 0.22, liquidDensity: 0.06, nodeCount: 16, creatures: ['vine', 'stalker'],
+    nodes: [
+      { name: 'Плодовое дерево', resource: 'food', amount: [10, 25], work: 4, skill: 'botany', weight: 3 },
+      { name: 'Живая древесина', resource: 'biomass', amount: [20, 40], work: 5, skill: 'botany', weight: 4 },
+      { name: 'Семенной банк', resource: 'crystals', amount: [3, 8], work: 8, skill: 'botany', weight: 1 },
+    ],
+  },
+  ice: {
+    ground: '#5f7380', rough: '#6f8592', block: '#a9c2d0', liquid: '#1b3a55', blockName: 'Торосы', liquidName: 'Полынья',
+    blockDensity: 0.15, liquidDensity: 0.07, nodeCount: 14, creatures: ['ice_crawler'],
+    nodes: [
+      { name: 'Чистый ледник', resource: 'ice', amount: [25, 50], work: 4, skill: 'engineering', weight: 5 },
+      { name: 'Подлёдная руда', resource: 'metal', amount: [8, 18], work: 7, skill: 'engineering', weight: 1 },
+    ],
+  },
+  desert: {
+    ground: '#6a3e26', rough: '#7a4a2e', block: '#4a2c1c', liquid: '#3a2418', blockName: 'Ржавые скалы', liquidName: 'Зыбучий песок',
+    blockDensity: 0.14, liquidDensity: 0.05, nodeCount: 14, creatures: ['beast', 'drone_scout'],
+    nodes: [
+      { name: 'Жила железа', resource: 'metal', amount: [20, 40], work: 6, skill: 'engineering', weight: 4 },
+      { name: 'Обломки древнего корабля', resource: 'metal', amount: [15, 30], work: 5, skill: 'engineering', weight: 2 },
+      { name: 'Кристаллы в песке', resource: 'crystals', amount: [3, 8], work: 8, skill: 'engineering', weight: 1 },
+    ],
+  },
+  volcanic: {
+    ground: '#2a1a16', rough: '#3a221c', block: '#14100e', liquid: '#c43c0c', blockName: 'Базальт', liquidName: 'Лава',
+    blockDensity: 0.14, liquidDensity: 0.12, nodeCount: 12, creatures: ['magma_beetle'],
+    nodes: [
+      { name: 'Кристаллическая друза', resource: 'crystals', amount: [6, 14], work: 7, skill: 'engineering', weight: 3 },
+      { name: 'Застывший металл', resource: 'metal', amount: [15, 30], work: 6, skill: 'engineering', weight: 2 },
+    ],
+  },
+  ruins: {
+    ground: '#2c3236', rough: '#363d42', block: '#1a1f22', liquid: '#2a1418', blockName: 'Руины', liquidName: 'Провал',
+    blockDensity: 0.2, liquidDensity: 0.04, nodeCount: 12, creatures: ['drone_scout'],
+    nodes: [
+      { name: 'Склад машин', resource: 'credits', amount: [40, 90], work: 6, skill: 'engineering', weight: 2 },
+      { name: 'Процессорный блок', resource: 'crystals', amount: [5, 12], work: 7, skill: 'engineering', weight: 2 },
+      { name: 'Склад запчастей', resource: 'metal', amount: [20, 35], work: 5, skill: 'engineering', weight: 3 },
+    ],
+  },
+  toxic: {
+    ground: '#3a3d16', rough: '#474a1c', block: '#262810', liquid: '#7a8a12', blockName: 'Грибные столбы', liquidName: 'Кислотное болото',
+    blockDensity: 0.15, liquidDensity: 0.12, nodeCount: 14, creatures: ['sporeling'],
+    nodes: [
+      { name: 'Мутировавшие грибы', resource: 'biomass', amount: [15, 30], work: 4, skill: 'botany', weight: 3 },
+      { name: 'Кристаллы в иле', resource: 'crystals', amount: [4, 10], work: 7, skill: 'engineering', weight: 2 },
+    ],
+  },
+};
 
 // ---------- Враждебные фракции ----------
 

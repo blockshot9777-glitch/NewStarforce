@@ -6,8 +6,6 @@ import {
   DOCK_RANGE,
   DT,
   EXPEDITION_MAX_CREW,
-  EXPEDITION_ROLL_SECONDS,
-  EXPEDITION_SECONDS,
   HULLS,
   HULL_REPAIR_COST_PER_HP,
   JUMP_CHARGE_SECONDS,
@@ -52,8 +50,9 @@ import {
 import { clearOrder, isPiloted, normalizePriorities, orderCryo, orderMove, placeCrewOnBoard, setDraft, setPriority, toggleUrgent, updateCrew } from './crew';
 import { normalizeTemp } from './temp';
 import { shipAlerts, trackRates } from './alerts';
+import { allBoarded, generateSurface, landCrew, orderSurfaceMove, stepSurface, toggleSurfaceMark } from './surface';
 import { dropCarry, giveShip, materialsReady, normalizeStorage, putInStockpile, removeStored, syncStored, takeShip } from './items';
-import type { Command, Contact, LayoutView, OwnShipView, Snapshot } from './protocol';
+import type { Command, Contact, LayoutView, OwnShipView, Snapshot, SurfaceView } from './protocol';
 import { Rng } from './rng';
 import {
   createStarterShip,
@@ -109,10 +108,12 @@ export interface WorldState {
 export interface ClientCache {
   layouts: Map<number, number>;
   chatSeq: number;
+  /** Высадки, рельеф которых уже отправлен клиенту (рельеф не меняется). */
+  surfaces: Set<number>;
 }
 
 export function newClientCache(): ClientCache {
-  return { layouts: new Map(), chatSeq: 0 };
+  return { layouts: new Map(), chatSeq: 0, surfaces: new Set() };
 }
 
 // ---------- Геометрия ----------
@@ -198,6 +199,15 @@ export class World {
         normalizePriorities(c);
         if (c.carry === undefined) c.carry = null;
       }
+    }
+    // Сохранения до поверхности планет: таймерная экспедиция сразу возвращается на корабль с добычей.
+    const legacy = state.expeditions.filter((e) => !e.surface);
+    state.expeditions = state.expeditions.filter((e) => e.surface);
+    for (const e of legacy) {
+      const ship = state.ships.find((s) => s.id === e.shipId);
+      if (!ship) continue;
+      for (const c of e.crew) placeCrewOnBoard(ship, c);
+      giveShip(ship, e.loot, () => state.nextId++);
     }
     return new World(state);
   }
@@ -962,40 +972,24 @@ export class World {
       if (!owner?.online) continue;
       const sys = this.state.systems[e.systemId];
       const planet = sys.planets.find((p) => p.id === e.planetId)!;
-      const biome = BIOMES[planet.biome];
-      if (e.timeLeft > 0) {
-        e.timeLeft -= dt;
-        e.rollTimer -= dt;
-        while (e.rollTimer <= 0 && e.crew.length) {
-          e.rollTimer += EXPEDITION_ROLL_SECONDS;
-          if (this.rng.chance(biome.threat)) {
-            const victim = this.rng.pick(e.crew);
-            const dmg = this.rng.range(10, 30) * (1 - victim.skills.combat * 0.05);
-            victim.health -= dmg;
-            this.log(owner, `${planet.name}: ${this.rng.pick(biome.dangers).replace('{name}', victim.name)}.`, 'warn');
-            if (victim.health <= 0) {
-              e.crew = e.crew.filter((c) => c !== victim);
-              this.log(owner, `${victim.name} погиб(ла) на планете ${planet.name}.`, 'bad');
-            }
-          } else {
-            const entries = Object.entries(biome.loot) as [Resource, [number, number]][];
-            const [res, [lo, hi]] = this.rng.pick(entries);
-            e.loot[res] = (e.loot[res] ?? 0) + this.rng.int(lo, hi);
-            if (this.rng.chance(0.3)) this.log(owner, `${planet.name}: найдено — ${this.rng.pick(biome.finds)}.`, 'info');
-          }
-        }
-        if (!e.crew.length) {
-          this.state.expeditions = this.state.expeditions.filter((x) => x !== e);
-          this.log(owner, `Экспедиция на ${planet.name} погибла полностью.`, 'bad');
-        }
+      stepSurface(e, dt, {
+        rng: this.rng,
+        nextId: this.nextId,
+        log: (text, level) => this.log(owner, text, level),
+        biome: planet.biome,
+        planetName: planet.name,
+      });
+      if (!e.crew.length) {
+        this.state.expeditions = this.state.expeditions.filter((x) => x !== e);
+        this.log(owner, `Высадка на ${planet.name} погибла полностью.`, 'bad');
         continue;
       }
-      // Команда ждёт на поверхности, пока корабль не вернётся в систему.
-      if (ship.systemId !== e.systemId) continue;
+      // Шаттл стартует, когда все на борту; корабль должен быть в той же системе.
+      if (!e.returning || !allBoarded(e) || ship.systemId !== e.systemId) continue;
       for (const c of e.crew) placeCrewOnBoard(ship, c);
       giveShip(ship, e.loot, this.nextId);
       this.state.expeditions = this.state.expeditions.filter((x) => x !== e);
-      this.log(owner, `Экспедиция вернулась с ${planet.name}. Добыто: ${formatLoot(e.loot) || 'ничего'}.`, 'good');
+      this.log(owner, `Шаттл вернулся с ${planet.name}. Добыто: ${formatLoot(e.loot) || 'ничего'}.`, 'good');
     }
   }
 
@@ -1084,8 +1078,20 @@ export class World {
       case 'recall': {
         const e = this.state.expeditions.find((x) => x.id === cmd.expeditionId && x.ownerId === player.id);
         if (!e) return 'Нет такой экспедиции';
-        e.timeLeft = Math.min(e.timeLeft, 5);
+        e.returning = true;
         return null;
+      }
+      case 'landMove': {
+        const e = this.state.expeditions.find((x) => x.id === cmd.expeditionId && x.ownerId === player.id);
+        if (!e) return 'Нет такой высадки';
+        if (!isInt(cmd.crewId) || !isInt(cmd.x) || !isInt(cmd.y)) return 'Некорректный приказ';
+        return orderSurfaceMove(e, cmd.crewId, cmd.x, cmd.y);
+      }
+      case 'landMark': {
+        const e = this.state.expeditions.find((x) => x.id === cmd.expeditionId && x.ownerId === player.id);
+        if (!e) return 'Нет такой высадки';
+        if (!isInt(cmd.nodeId)) return 'Некорректная точка';
+        return toggleSurfaceMark(e, cmd.nodeId);
       }
       case 'trade':
         return this.trade(ship, cmd.resource, cmd.amount);
@@ -1172,6 +1178,8 @@ export class World {
       c.state = 'idle';
     }
     ship.crew = ship.crew.filter((c) => !crew.includes(c));
+    const surface = generateSurface(this.rng, planet.biome, this.nextId);
+    landCrew(surface, crew);
     this.state.expeditions.push({
       id: this.nextId(),
       shipId: ship.id,
@@ -1179,9 +1187,9 @@ export class World {
       systemId: ship.systemId,
       planetId: planet.id,
       crew,
-      timeLeft: EXPEDITION_SECONDS,
-      rollTimer: EXPEDITION_ROLL_SECONDS,
       loot: {},
+      surface,
+      returning: false,
     });
     this.log(player, `Шаттл уходит на ${planet.name} (${BIOMES[planet.biome].name}): ${crew.map((c) => c.name).join(', ')}.`, 'info');
     return null;
@@ -1311,6 +1319,27 @@ export class World {
     };
   }
 
+  private surfaceView(e: Expedition, cache: ClientCache): SurfaceView {
+    const s = e.surface;
+    const firstTime = !cache.surfaces.has(e.id);
+    cache.surfaces.add(e.id);
+    const r = (v: number) => Math.round(v * 100) / 100;
+    return {
+      w: s.w,
+      h: s.h,
+      terrain: firstTime ? s.terrain : null,
+      shuttle: s.shuttle,
+      elapsed: s.elapsed,
+      marked: [...s.marked],
+      nodes: s.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y, kind: n.kind, amount: n.amount })),
+      creatures: s.creatures.map((c) => ({ id: c.id, type: c.type, x: r(c.x), y: r(c.y), hp: c.hp })),
+      crew: e.crew.map((c) => {
+        const a = s.actors.find((x) => x.crewId === c.id);
+        return { id: c.id, name: c.name, robot: c.robot, x: r(c.x), y: r(c.y), health: c.health, task: a?.task ?? 'idle' };
+      }),
+    };
+  }
+
   snapshotFor(playerId: number, cache: ClientCache): Snapshot {
     const player = this.player(playerId)!;
     const ship = this.shipOf(player);
@@ -1396,9 +1425,10 @@ export class World {
             planetId: e.planetId,
             planetName: planet.name,
             biome: planet.biome,
-            crew: e.crew.map((c) => ({ id: c.id, name: c.name, health: c.health })),
-            timeLeft: Math.max(0, e.timeLeft),
             loot: { ...e.loot },
+            returning: e.returning,
+            waitingForShip: e.returning && allBoarded(e) && this.state.ships.find((s) => s.id === e.shipId)?.systemId !== e.systemId,
+            surface: this.surfaceView(e, cache),
           };
         }),
       fx: sys.fx.filter((f) => ('x' in f ? visible(f, 100) : visible({ x: f.x1, y: f.y1 }, 600))),

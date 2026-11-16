@@ -560,3 +560,25 @@ button.chip {
     animation: none;
   }
 }
+
+.planet-hint {
+  align-self: center;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--edge-dim);
+  padding: 5px 10px;
+  border-radius: 3px;
+}
+
+body.planet-mode #log {
+  left: auto;
+  right: 8px;
+  transform: none;
+  width: 440px;
+  bottom: 56px;
+}
+
+body.planet-mode #context {
+  top: 84px;
+  max-height: 46vh;
+}

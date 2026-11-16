@@ -80,7 +80,11 @@ npm start          # сборка клиента + сервер на :8787
    поле `alerts` в `OwnShipView`; столбик `renderAlerts` в `ui.ts`. Баланс воды в `defs.ts`
    (`O2_GEN_WATER`, `HYDRO_WATER`, стартовый лёд): тест «стартовый корабль … живёт не меньше 30 минут»
    в `alerts.test.ts` — менять баланс только так, чтобы он оставался зелёным.
-7. **Поверхность планет** — отдельная карта, куда высаживается команда (заменит абстрактные экспедиции).
+7. **Поверхность планет — сделано.** Генерация карты, ИИ команды и хищников — `surface.ts`
+   (`generateSurface`, `stepSurface`, `orderSurfaceMove`, `toggleSurfaceMark`); данные биомов и существ —
+   `SURFACE_BIOMES`, `CREATURES` в `defs.ts`; команды `expedition`/`recall`/`landMove`/`landMark` в
+   `World.command`; отрисовка — `render/planet.ts`, режим `planet` в `main.ts`/`ui.ts`. Нужды экипажа на
+   планете пока заморожены (еда/сон не тратятся) — это упрощение, а не ошибка. Тесты — `surface.test.ts`.
 8. Далее — `docs/ROADMAP.md`, фазы 3–4.
 
 ## Чего не делать

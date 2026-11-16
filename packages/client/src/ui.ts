@@ -61,6 +61,15 @@ function setHtml(el: HTMLElement, html: string): void {
   }
 }
 
+const SURFACE_TASKS: Record<string, string> = {
+  idle: 'ждёт',
+  gather: 'добывает',
+  move: 'идёт',
+  flee: 'ранен, к шаттлу',
+  board: 'к шаттлу',
+  boarded: 'в шаттле',
+};
+
 const STATE_NAMES: Record<string, string> = {
   idle: 'свободен',
   working: 'работает',
@@ -113,8 +122,14 @@ export function kindName(kind: BuildKind): string {
 export function setMode(mode: Mode): void {
   if (store.mode === mode) return;
   if (store.mode === 'ship') store.shipZoom = store.zoomTarget;
-  else store.systemZoom = store.zoomTarget;
+  else if (store.mode === 'system') store.systemZoom = store.zoomTarget;
   store.mode = mode;
+  if (mode === 'planet') {
+    store.tool = null;
+    store.panel = null;
+    store.galaxyOpen = false;
+    return;
+  }
   store.zoomTarget = mode === 'ship' ? store.shipZoom : store.systemZoom;
   if (mode === 'system') {
     store.tool = null;
@@ -129,6 +144,11 @@ function handleAction(el: HTMLElement): void {
   switch (act) {
     case 'mode':
       setMode(store.mode === 'ship' ? 'system' : 'ship');
+      break;
+    case 'planet':
+      store.landingId = id;
+      store.planetCrew = null;
+      setMode('planet');
       break;
     case 'panel': {
       const p = el.dataset.panel as 'build' | 'crew';
@@ -268,6 +288,8 @@ export function renderUi(force = false): void {
   const snap = store.snap;
   if (!snap) return;
   const own = snap.ship;
+  // На экране планеты журнал и карточка переезжают, чтобы не закрывать карту.
+  document.body.classList.toggle('planet-mode', store.mode === 'planet');
   renderTop(own, snap.systemId, snap.population);
   renderAlerts(own);
   renderButtons(own);
@@ -315,6 +337,21 @@ function renderTop(own: OwnShipView | null, systemId: number, population: number
 }
 
 function renderButtons(own: OwnShipView | null): void {
+  if (store.mode === 'planet') {
+    const e = store.snap!.expeditions.find((x) => x.id === store.landingId);
+    setHtml(
+      $('buttons-left'),
+      e
+        ? `<span class="planet-hint">ЛКМ — выбрать человека или пометить ресурс важным · ПКМ — отправить выбранного · Esc — на корабль</span>`
+        : '',
+    );
+    setHtml(
+      $('buttons-right'),
+      `${e && !e.returning ? `<button data-act="recall" data-id="${e.id}" class="danger">⤴ Все к шаттлу</button>` : ''}
+       <button data-act="mode" class="big">⚙ Корабль</button>`,
+    );
+    return;
+  }
   const ship = store.mode === 'ship';
   setHtml(
     $('buttons-left'),
@@ -387,7 +424,7 @@ function renderCrew(own: OwnShipView | null): void {
     return;
   }
   el.classList.remove('hidden');
-  const away = store.snap!.expeditions.reduce((s, e) => s + e.crew.length, 0);
+  const away = store.snap!.expeditions.reduce((s, e) => s + e.surface.crew.length, 0);
   const rows = own.crew
     .map((c) => {
       const s = c.skills;
@@ -447,14 +484,22 @@ function renderContext(own: OwnShipView | null): void {
     if (own.marketId !== null && snap.market) parts.push(marketPanel(own));
     if (snap.expeditions.length) {
       parts.push(
-        `<div class="card"><div class="panel-title">Экспедиции</div>${snap.expeditions
-          .map(
-            (e) =>
-              `<div class="row"><b>${esc(e.planetName)}</b> · ${e.timeLeft > 0 ? `${Math.ceil(e.timeLeft)} с` : 'ждёт корабль в системе'}<br>
-               ${e.crew.map((c) => `${esc(c.name)} ${Math.round(c.health)}❤`).join(', ')}<br>
-               <span class="muted">${Object.entries(e.loot).map(([k, v]) => `${RES_ICON[k as Resource]}${v}`).join(' ') || 'пока ничего'}</span>
-               ${e.timeLeft > 5 ? `<button data-act="recall" data-id="${e.id}">Отозвать</button>` : ''}</div>`,
-          )
+        `<div class="card"><div class="panel-title">Высадки</div>${snap.expeditions
+          .map((e) => {
+            const status = e.waitingForShip
+              ? '<span class="warn">все в шаттле, ждут корабль в системе</span>'
+              : e.returning
+                ? 'возвращаются к шаттлу'
+                : `на поверхности ${Math.floor(e.surface.elapsed / 60)}:${String(Math.floor(e.surface.elapsed % 60)).padStart(2, '0')}`;
+            const crew = e.surface.crew
+              .map((c) => `${c.robot ? '🤖' : ''}${esc(c.name.split(' ')[0])} <span class="${c.health < 40 ? 'warn' : 'muted'}">${Math.round(c.health)}❤ · ${SURFACE_TASKS[c.task]}</span>`)
+              .join('<br>');
+            return `<div class="row"><b>${esc(e.planetName)}</b> · ${status}<br>${crew}<br>
+               <span class="muted">Добыто: ${Object.entries(e.loot).map(([k, v]) => `${RES_ICON[k as Resource]}${v}`).join(' ') || 'пока ничего'}
+               · хищников: ${e.surface.creatures.length}</span>
+               <div class="actions">${store.mode !== 'planet' || store.landingId !== e.id ? `<button data-act="planet" data-id="${e.id}" class="accent">🌍 На поверхность</button>` : ''}
+               ${e.returning ? '' : `<button data-act="recall" data-id="${e.id}">⤴ Все к шаттлу</button>`}</div></div>`;
+          })
           .join('')}</div>`,
       );
     }
