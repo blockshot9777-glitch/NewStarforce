@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { STAR_SYSTEMS } from '@starforce/shared';
-import { NEBULA_SIZE, nebulaBlobs, tileOffset, wrappedCenters } from '../src/render/nebula';
+import { NEBULA_SIZE, nebulaBlobs, nebulaPixels, periodicFbm, tileOffset, wrappedCenters } from '../src/render/nebula';
 
 /** Поле яркости так же, как рисуются пятна: копии за краем тайла переносятся внутрь. */
 function paintField(blobs: { x: number; y: number; r: number }[], size: number, wrap: boolean): Float64Array {
@@ -100,5 +100,33 @@ describe('туманность', () => {
       expect(offset).toBeGreaterThan(-NEBULA_SIZE);
       expect(offset).toBeLessThanOrEqual(0);
     }
+  });
+});
+
+describe('рисованный слой туманности', () => {
+  it('шум периодичен: значение на краю тайла совпадает с противоположным краем', () => {
+    for (let i = 0; i < 20; i++) {
+      const v = i / 20;
+      expect(Math.abs(periodicFbm(0, v, 4, 9) - periodicFbm(1, v, 4, 9))).toBeLessThan(1e-9);
+      expect(Math.abs(periodicFbm(v, 0, 4, 9) - periodicFbm(v, 1, 4, 9))).toBeLessThan(1e-9);
+    }
+  });
+
+  it('тайл стыкуется без шва и не заливает фон', () => {
+    const res = 64;
+    const px = nebulaPixels(STAR_SYSTEMS[0] ? 0 : 0, '#ffe082', res);
+    const a = (x: number, y: number) => px[(y * res + x) * 4 + 3]!;
+    // Скачок на стыке (последний столбец → первый) не больше, чем обычный скачок между соседями внутри.
+    let seam = 0;
+    let inner = 0;
+    for (let y = 0; y < res; y++) {
+      seam = Math.max(seam, Math.abs(a(res - 1, y) - a(0, y)), Math.abs(a(y, res - 1) - a(y, 0)));
+      for (let x = 1; x < res; x++) inner = Math.max(inner, Math.abs(a(x, y) - a(x - 1, y)));
+    }
+    expect(seam).toBeLessThanOrEqual(inner + 1);
+    // Средняя непрозрачность небольшая — туманность остаётся фоном.
+    let sum = 0;
+    for (let i = 3; i < px.length; i += 4) sum += px[i]!;
+    expect(sum / (res * res) / 255).toBeLessThan(0.35);
   });
 });

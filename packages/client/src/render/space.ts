@@ -11,7 +11,7 @@ import {
   type Resource,
 } from '@starforce/shared';
 import { interp, store, worldToScreen } from '../store';
-import { NEBULA_SIZE, nebulaBlobs, tileOffset, wrappedCenters } from './nebula';
+import { NEBULA_SIZE, nebulaBlobs, nebulaPixels, tileOffset, wrappedCenters } from './nebula';
 import { drawHull, drawInterior, moduleWorld } from './ship';
 import { drawParticles, explosion, impact, trail } from './particles';
 import { drawSunlit, setStarColor, toSunAngle } from './sunlight';
@@ -51,7 +51,68 @@ const LAYERS: { factor: number; stars: Star[]; size: number }[] = [0.05, 0.15, 0
   };
 });
 
+const starDots = new Map<string, HTMLCanvasElement>();
+/** Звезда фона: яркое ядро и мягкий ореол; самые крупные — с тонкими лучами дифракции. */
+function starDot(color: string): HTMLCanvasElement {
+  let c = starDots.get(color);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const g = c.getContext('2d')!;
+  const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, '#ffffff');
+  gr.addColorStop(0.12, color);
+  gr.addColorStop(0.3, `${color}55`);
+  gr.addColorStop(1, `${color}00`);
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 32, 32);
+  g.fillStyle = `${color}66`;
+  g.fillRect(15.5, 2, 1, 28);
+  g.fillRect(2, 15.5, 28, 1);
+  starDots.set(color, c);
+  return c;
+}
+
 let nebula: HTMLCanvasElement | null = null;
+let nebulaWorker: Worker | null | undefined;
+
+/** Наложить пиксели рисованного слоя на тайл: считаются в половинном разрешении и растягиваются.
+ * Копии вокруг тайла нужны, чтобы сглаживание у краёв брало соседей «с той стороны» — без шва. */
+function applyNebulaLayer(target: HTMLCanvasElement, px: Uint8ClampedArray, res: number): void {
+  const half = document.createElement('canvas');
+  half.width = half.height = res;
+  const hg = half.getContext('2d')!;
+  const id = hg.createImageData(res, res);
+  id.data.set(px);
+  hg.putImageData(id, 0, 0);
+  const g = target.getContext('2d')!;
+  g.imageSmoothingEnabled = true;
+  for (const dx of [-1, 0, 1]) for (const dy of [-1, 0, 1]) g.drawImage(half, dx * NEBULA_SIZE, dy * NEBULA_SIZE, NEBULA_SIZE, NEBULA_SIZE);
+}
+
+function requestNebulaLayer(systemId: number, star: string, target: HTMLCanvasElement): void {
+  const res = NEBULA_SIZE / 2;
+  if (nebulaWorker === undefined) {
+    try {
+      nebulaWorker = new Worker(new URL('./nebulaWorker.ts', import.meta.url), { type: 'module' });
+    } catch {
+      nebulaWorker = null;
+    }
+  }
+  if (!nebulaWorker) {
+    applyNebulaLayer(target, nebulaPixels(systemId, star, res), res);
+    return;
+  }
+  const w = nebulaWorker;
+  const onMsg = (e: MessageEvent<{ systemId: number; res: number; px: Uint8ClampedArray }>) => {
+    if (e.data.systemId !== systemId) return;
+    w.removeEventListener('message', onMsg);
+    // Пока считали, игрок мог улететь в другую систему — тогда этот тайл уже не нужен.
+    if (nebula === target) applyNebulaLayer(target, e.data.px, e.data.res);
+  };
+  w.addEventListener('message', onMsg);
+  w.postMessage({ systemId, star, res });
+}
 let nebulaSystem = -1;
 
 function makeNebula(systemId: number): HTMLCanvasElement {
@@ -68,6 +129,8 @@ function makeNebula(systemId: number): HTMLCanvasElement {
       g.fillRect(0, 0, NEBULA_SIZE, NEBULA_SIZE);
     }
   }
+  // Рисованный слой (клубы, нити, пыль) — в фоновом потоке; пока считается, видны только пятна.
+  requestNebulaLayer(systemId, base, c);
   return c;
 }
 
@@ -97,8 +160,11 @@ function drawBackground(ctx: CanvasRenderingContext2D, W: number, H: number, sys
         for (let y = s.y + oy; y < H; y += layer.size) {
           if (y < -2) continue;
           ctx.globalAlpha = s.a;
-          ctx.fillStyle = s.c;
-          ctx.fillRect(x, y, s.r, s.r);
+          if (s.r > 1.1) ctx.drawImage(starDot(s.c), x - s.r * 2, y - s.r * 2, s.r * 4, s.r * 4);
+          else {
+            ctx.fillStyle = s.c;
+            ctx.fillRect(x, y, s.r, s.r);
+          }
         }
       }
     }
