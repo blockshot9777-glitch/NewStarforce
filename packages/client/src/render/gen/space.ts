@@ -267,15 +267,21 @@ export function npcSprite(type: NpcType): HTMLCanvasElement {
         },
         (u, v, _edge, base) => {
           const spine = Math.max(0, 1 - Math.abs(v - 0.5) / 0.06) * (u > 0.35 ? 1 : 0);
-          const eye = Math.hypot(u - 0.62, v - 0.5) < 0.05;
-          const plate = 0.85 + hash2(Math.floor(u * 8), Math.floor(v * 6), 3) * 0.2;
+          const eye = Math.hypot(u - 0.62, v - 0.5) < 0.04;
+          const tip = Math.hypot(u - 0.3, v - 0.21) < 0.025 || Math.hypot(u - 0.3, v - 0.79) < 0.025;
+          const nozzle = u < 0.13 && (Math.abs(v - 0.24) < 0.045 || Math.abs(v - 0.76) < 0.045);
+          // Панели: диагональные швы по крыльям.
+          const seam = Math.abs(((u * 3 + Math.abs(v - 0.5) * 4) % 1) - 0.5) > 0.47;
+          const plate = 0.82 + hash2(Math.floor(u * 6), Math.floor(Math.abs(v - 0.5) * 8), 3) * 0.25;
           const c = hex('#454c55');
+          let col: RGB = [c[0] * plate, c[1] * plate, c[2] * plate];
+          if (seam) col = mix(col, [15, 17, 20], 0.5);
           return {
-            h: base * 1.2 + spine * 0.8,
-            color: eye ? hex('#ff2a3a') : [c[0] * plate, c[1] * plate, c[2] * plate],
+            h: base * 1.2 + spine * 0.8 - (seam ? 0.1 : 0),
+            color: eye ? hex('#ff2a3a') : tip ? hex('#ff6b3a') : nozzle ? hex('#ff8a3a') : col,
             alpha: 1,
             gloss: 0.5,
-            emit: eye ? [200, 20, 30] : undefined,
+            emit: eye ? [200, 20, 30] : tip ? [160, 40, 10] : nozzle ? [180, 60, 10] : undefined,
           };
         },
         0.06,
@@ -283,36 +289,67 @@ export function npcSprite(type: NpcType): HTMLCanvasElement {
       );
     }
     if (type === 'sentinel') {
+      // Тяжёлая машина: шестигранный бронекорпус, три оружейные гондолы, ствол по курсу,
+      // красные смотровые щели и ядро за решёткой.
       return shapeSprite(
         S,
         (g, s) => {
+          const c = s / 2;
           g.beginPath();
           for (let i = 0; i < 6; i++) {
-            const a = (i / 6) * Math.PI * 2;
-            g.lineTo(s / 2 + Math.cos(a) * s * 0.44, s / 2 + Math.sin(a) * s * 0.44);
+            const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+            g.lineTo(c + Math.cos(a) * s * 0.3, c + Math.sin(a) * s * 0.3);
           }
           g.closePath();
           g.fill();
+          for (const a of [Math.PI * 0.66, Math.PI * 1.34, 0]) {
+            const px = c + Math.cos(a) * s * (a === 0 ? 0.2 : 0.3);
+            const py = c + Math.sin(a) * s * (a === 0 ? 0.2 : 0.3);
+            g.beginPath();
+            g.ellipse(px, py, s * 0.11, s * 0.09, a, 0, Math.PI * 2);
+            g.fill();
+          }
+          g.fillRect(c, c - s * 0.035, s * 0.46, s * 0.07);
         },
         (u, v, _edge, base) => {
           const dx = u - 0.5;
           const dy = v - 0.5;
           const d = Math.hypot(dx, dy);
           const a = Math.atan2(dy, dx);
-          const ring = Math.abs(d - 0.26) < 0.015;
-          const core = d < 0.1;
-          const plate = Math.floor(((a + Math.PI) / (Math.PI * 2)) * 6);
-          const k = 0.8 + hash2(plate, d > 0.26 ? 1 : 0, 9) * 0.3;
-          const c = hex('#3a4048');
-          return {
-            h: base * 1.4 + (d < 0.26 ? 0.6 : 0) + (core ? (0.1 - d) * 10 : 0) - (ring ? 0.4 : 0),
-            color: core ? hex('#ff3b30') : ring ? hex('#8a1f1f') : [c[0] * k, c[1] * k, c[2] * k],
-            alpha: 1,
-            gloss: core ? 0.9 : 0.45,
-            emit: core ? [230, 40, 30] : ring ? [120, 10, 10] : undefined,
-          };
+          const barrel = dx > 0.18 && Math.abs(dy) < 0.035;
+          const muzzle = barrel && dx > 0.43;
+          const grill = d < 0.09 && Math.abs(((dx * 70) % 1)) < 0.35;
+          const core = d < 0.09 && !grill;
+          const slit = Math.abs(d - 0.2) < 0.008 && Math.abs(Math.sin(a * 3)) > 0.85;
+          const plate = Math.floor(((a + Math.PI) / (Math.PI * 2)) * 6 + 0.5);
+          const ringSeam = Math.abs(d - 0.15) < 0.006 || Math.abs(d - 0.25) < 0.006;
+          const k = 0.78 + hash2(plate, d > 0.15 ? (d > 0.25 ? 2 : 1) : 0, 9) * 0.3;
+          const armor = hex('#3e444c');
+          let col: RGB = [armor[0] * k, armor[1] * k, armor[2] * k];
+          let h = base * 1.5 + (d < 0.25 ? 0.5 : 0) + (d < 0.15 ? 0.4 : 0) - (ringSeam ? 0.3 : 0);
+          let emit: RGB | undefined;
+          let gloss = 0.45;
+          if (barrel) {
+            col = hex('#2a2e33');
+            h = 1.2 - Math.abs(dy) * 15;
+            gloss = 0.8;
+          }
+          if (muzzle) emit = [90, 20, 10];
+          if (core) {
+            col = hex('#ff3b30');
+            emit = [220, 30, 20];
+            gloss = 0.9;
+          } else if (grill) {
+            col = hex('#1d2024');
+            h -= 0.3;
+          }
+          if (slit) {
+            col = hex('#ff2a1f');
+            emit = [200, 20, 10];
+          }
+          return { h, color: col, alpha: 1, gloss, emit };
         },
-        0.07,
+        0.06,
         5,
       );
     }
@@ -331,14 +368,17 @@ export function npcSprite(type: NpcType): HTMLCanvasElement {
         const vein = Math.abs(fbm(u * 7, v * 7, 77, 3) - 0.5) < 0.03;
         // Спорангии — по одному в каждой из пяти долей.
         const la = Math.round((a / (Math.PI * 2)) * 5) * ((Math.PI * 2) / 5);
-        const sac = Math.hypot(dx - Math.cos(la) * 0.2, dy - Math.sin(la) * 0.2) < 0.04;
+        const sd = Math.hypot(dx - Math.cos(la) * 0.2, dy - Math.sin(la) * 0.2) / 0.045;
+        const sac = sd < 1;
         const body = mix(hex('#2f5d1f'), hex('#7aa83a'), lobe * 0.6 + (1 - d / rad) * 0.4);
+        // Спорангий — выпуклый полупрозрачный пузырь, светится изнутри (ярче к центру).
+        const glow = sac ? (1 - sd) : 0;
         return {
-          h: Math.sqrt(Math.max(0, 1 - (d / rad) ** 2)) * 1.6 + lobe * 0.3,
-          color: sac ? hex('#e6ff5a') : vein ? hex('#1e3a14') : body,
+          h: Math.sqrt(Math.max(0, 1 - (d / rad) ** 2)) * 1.6 + lobe * 0.3 + (sac ? Math.sqrt(1 - sd * sd) * 0.7 : 0),
+          color: sac ? mix(hex('#6f8f1c'), hex('#f2ff8a'), glow) : vein ? hex('#1e3a14') : body,
           alpha: 1,
-          gloss: 0.35,
-          emit: sac ? [120, 140, 10] : undefined,
+          gloss: sac ? 0.9 : 0.35,
+          emit: sac ? [Math.round(140 * glow), Math.round(170 * glow), 10] : undefined,
         };
       },
       4,
