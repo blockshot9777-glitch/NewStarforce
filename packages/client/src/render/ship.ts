@@ -161,6 +161,50 @@ function paintDoor(ctx: CanvasRenderingContext2D, x: number, y: number, ts: numb
   ctx.fillRect(x + ts * 0.8, y + ts * 0.14, Math.max(2, ts * 0.08), Math.max(2, ts * 0.08));
 }
 
+/** Насколько открыта каждая дверь (0..1) — только для анимации, на игру не влияет. */
+const doorOpen = new Map<string, number>();
+/** Последняя позиция, фаза шага и «сила» походки экипажа (для покачивания при ходьбе). */
+const crewWalk = new Map<number, { x: number; y: number; phase: number; w: number }>();
+const doorClock = new Map<number, number>();
+
+/** Дверь со створками, разъехавшимися на долю frac: каждая половина — та же дверь, обрезанная и сдвинутая. */
+function paintDoorSliding(ctx: CanvasRenderingContext2D, x: number, y: number, ts: number, frac: number, vertical: boolean): void {
+  if (frac < 0.02) {
+    paintDoor(ctx, x, y, ts, false, vertical);
+    return;
+  }
+  // Проём: стальной порог с направляющей посередине (цвета пола из ART_STYLE).
+  ctx.fillStyle = '#2a2e36';
+  ctx.fillRect(x, y, ts, ts);
+  ctx.fillStyle = '#15181d';
+  if (vertical) ctx.fillRect(x + ts * 0.46, y, ts * 0.08, ts);
+  else ctx.fillRect(x, y + ts * 0.46, ts, ts * 0.08);
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  if (vertical) ctx.fillRect(x + ts * 0.54, y, ts * 0.02, ts);
+  else ctx.fillRect(x, y + ts * 0.54, ts, ts * 0.02);
+  const e = frac * frac * (3 - 2 * frac);
+  // Створки уходят в переборку не до конца — у косяков остаются их кромки.
+  const shift = e * ts * 0.38;
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, ts, ts);
+    ctx.clip();
+    if (vertical) {
+      ctx.translate(0, side * shift);
+      ctx.beginPath();
+      ctx.rect(x, side < 0 ? y : y + ts / 2, ts, ts / 2);
+    } else {
+      ctx.translate(side * shift, 0);
+      ctx.beginPath();
+      ctx.rect(side < 0 ? x : x + ts / 2, y, ts / 2, ts);
+    }
+    ctx.clip();
+    paintDoor(ctx, x, y, ts, false, vertical);
+    ctx.restore();
+  }
+}
+
 function drawStackLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, ts: number): void {
   ctx.font = `${Math.max(8, ts * 0.22)}px system-ui`;
   ctx.textAlign = 'center';
@@ -532,16 +576,23 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
     paintWall(ctx, p.x, p.y, ts, x, y, tileAt);
   });
 
-  // Двери: открыты, если в проёме кто-то стоит.
-  const crewTiles = new Set(ship.crew.map((c) => `${Math.round(c.x)},${Math.round(c.y)}`));
+  // Двери: створки плавно разъезжаются, когда к проёму подходит человек (ближе ~1 клетки).
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - (doorClock.get(ship.id) ?? now)) / 1000);
+  doorClock.set(ship.id, now);
+  const people = ship.crew.map((c) => o.crewPos.get(c.id) ?? c);
   l.grid.tiles.forEach((tile, i) => {
     if (tile !== 'door') return;
     const x = i % l.w;
     const y = Math.floor(i / l.w);
     const p = at(x, y);
-    const open = crewTiles.has(`${x},${y}`);
+    const near = people.some((c) => Math.hypot(c.x - x, c.y - y) < 1.15);
+    const key = `${ship.id}:${i}`;
+    const cur = doorOpen.get(key) ?? (near ? 1 : 0);
+    const next = near ? Math.min(1, cur + dt * 4) : Math.max(0, cur - dt * 2.5);
+    doorOpen.set(key, next);
     const vertical = tileAt(x, y - 1) === 'wall' || tileAt(x, y + 1) === 'wall';
-    paintDoor(ctx, p.x, p.y, ts, open, vertical);
+    paintDoorSliding(ctx, p.x, p.y, ts, next, vertical);
   });
 
   // Модули — на мягкой контактной тени: «стоят» на полу, а не наклеены.
@@ -643,7 +694,21 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
     occupancy.set(key, n + 1);
     const spread = n === 0 ? { x: 0, y: 0 } : { x: Math.cos(n * 2.4) * 0.28, y: Math.sin(n * 2.4) * 0.28 };
     const p = at(pos.x + 0.5 + spread.x, pos.y + 0.5 + spread.y);
+    // Походка: по смещению за кадр понимаем, идёт ли человек, и копим фазу шага.
+    const prev = crewWalk.get(c.id);
+    const moved = prev ? Math.hypot(pos.x - prev.x, pos.y - prev.y) : 0;
+    const walking = moved > 0.002;
+    const phase = (prev?.phase ?? 0) + moved * 9;
+    crewWalk.set(c.id, { x: pos.x, y: pos.y, phase, w: walking ? 1 : Math.max(0, (prev?.w ?? 0) - 0.12) });
+    const w = crewWalk.get(c.id)!.w;
+    const bob = -Math.abs(Math.sin(phase)) * ts * 0.06 * w;
+    const sway = Math.sin(phase) * 0.07 * w;
+    ctx.save();
+    ctx.translate(p.x, p.y + ts * 0.3);
+    ctx.rotate(sway);
+    ctx.translate(-p.x, -(p.y + ts * 0.3) + bob);
     drawCrew(ctx, c, p.x, p.y, ts, c.id === store.selectedCrew, store.expeditionCrew.has(c.id), t);
+    ctx.restore();
   }
 
   for (const c of ship.crew) {
