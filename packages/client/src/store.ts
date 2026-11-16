@@ -65,7 +65,7 @@ export const store = {
   tempOverlay: false,
   galaxyOpen: false,
 
-  mouse: { x: 0, y: 0, wx: 0, wy: 0, down: false, button: 0 },
+  mouse: { x: 0, y: 0, wx: 0, wy: 0, down: false, button: 0, over: false },
   dragStart: null as { x: number; y: number } | null,
   hoverTile: null as { x: number; y: number } | null,
 };

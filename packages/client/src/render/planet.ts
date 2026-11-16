@@ -72,7 +72,11 @@ export function terrainImage(e: Pick<ExpeditionView, 'id' | 'biome' | 'surface'>
 }
 
 export function forgetTerrain(id: number): void {
+  const c = terrainCanvas.get(id);
+  // ImageBitmap держит память видеокарты, пока его явно не закрыть.
+  if (c && 'close' in c && typeof c.close === 'function') c.close();
   terrainCanvas.delete(id);
+  terrainPending.delete(id);
 }
 
 /** Крупный план, как в RimWorld: камера в клетках карты, масштаб — размер клетки в пикселях. */

@@ -5,7 +5,7 @@ import { kenneyEnabled, loadKenney } from './render/kenney';
 import { loadSprites } from './render/modules';
 import { loadPainted } from './render/painted';
 import { drawBackdrop, drawMinimap, drawSpace, type SpaceRenderResult } from './render/space';
-import { drawPlanetSurface, terrainImage, type PlanetLayout } from './render/planet';
+import { drawPlanetSurface, forgetTerrain, terrainImage, type PlanetLayout } from './render/planet';
 import { initAudio, playJump, toggleMute, updateLoops } from './audio';
 import { runGallery } from './render/gallery';
 import { PostFx } from './render/post';
@@ -173,6 +173,7 @@ function tileInOwnShip(): { x: number; y: number } | null {
 }
 
 function onMouseMove(e: MouseEvent): void {
+  store.mouse.over = true;
   store.mouse.x = e.clientX;
   store.mouse.y = e.clientY;
   const w = screenToWorld(e.clientX, e.clientY, W, H);
@@ -455,7 +456,7 @@ function drawFrame(now: number): void {
   const w = screenToWorld(store.mouse.x, store.mouse.y, W, H);
   store.mouse.wx = w.x;
   store.mouse.wy = w.y;
-  store.hoverTile = tileInOwnShip();
+  store.hoverTile = store.mouse.over ? tileInOwnShip() : null;
   const landing = store.mode === 'planet' ? snap.expeditions.find((e) => e.id === store.landingId) : undefined;
   const terrain = landing && store.terrains.get(landing.id);
   if (landing && terrain) {
@@ -463,6 +464,13 @@ function drawFrame(now: number): void {
     renderUi();
     renderTooltip();
     return;
+  }
+  // Высадка закончилась — её карта и текстура больше не нужны (иначе память растёт с каждой высадкой).
+  for (const id of store.terrains.keys()) {
+    if (!snap.expeditions.some((e) => e.id === id)) {
+      store.terrains.delete(id);
+      forgetTerrain(id);
+    }
   }
   // Рельеф высадок считается заранее в фоне — к нажатию «На поверхность» карта уже готова.
   for (const e of snap.expeditions) {
@@ -515,6 +523,12 @@ if (new URLSearchParams(location.search).has('gallery')) {
 resize();
 window.addEventListener('resize', resize);
 canvas.addEventListener('mousemove', onMouseMove);
+// Курсор ушёл с игрового поля (на панель интерфейса) — клетка под ним больше не «наведена».
+canvas.addEventListener('mouseleave', () => {
+  store.mouse.over = false;
+  store.hoverTile = null;
+});
+canvas.addEventListener('mouseenter', () => (store.mouse.over = true));
 canvas.addEventListener('mousedown', onMouseDown);
 window.addEventListener('mouseup', onMouseUp);
 canvas.addEventListener('wheel', onWheel, { passive: false });

@@ -29,6 +29,7 @@ const lastPlay = new Map<string, number>();
 /** Сколько раз прозвучал каждый вид звука и пиковый уровень на выходе — для проверки в браузере. */
 export const audioStats: { plays: Record<string, number>; peak: number } = { plays: {}, peak: 0 };
 let analyser: AnalyserNode | null = null;
+let meterBuf: Float32Array<ArrayBuffer> | null = null;
 
 /** Включить звук по первому жесту игрока (браузеры не дают играть звук без него). */
 export function initAudio(): void {
@@ -293,7 +294,7 @@ function startAmbient(): void {
 export function updateLoops(engine: number, mining: boolean): void {
   if (!ctx || !engineGain || !mineGain) return;
   if (analyser) {
-    const buf = new Float32Array(analyser.fftSize);
+    const buf = (meterBuf ??= new Float32Array(analyser.fftSize));
     analyser.getFloatTimeDomainData(buf);
     let pk = 0;
     for (const v of buf) pk = Math.max(pk, Math.abs(v));
