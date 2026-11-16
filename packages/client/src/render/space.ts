@@ -269,6 +269,7 @@ export function drawSpace(ctx: CanvasRenderingContext2D, W: number, H: number, t
       }
       // Лучи бура.
       const target = own.targetId !== null ? snap.contacts.find((o) => o.id === own.targetId) : undefined;
+      if (store.mode === 'ship') drawTurrets(ctx, own, l, pos, target, S, ts, t);
       for (const m of own.modules) {
         if (m.type !== 'mining_laser' || !m.active || !target) continue;
         const from = moduleWorld(pos, l, m.x, m.y);
@@ -369,6 +370,78 @@ export function drawSpace(ctx: CanvasRenderingContext2D, W: number, H: number, t
   }
   drawJump(ctx, W, H, own ? S(interp(own.id, own.x, own.y).x, interp(own.id, own.x, own.y).y) : null, own?.jump?.timeLeft ?? null, snap.systemId, t);
   return { interior };
+}
+
+// ---------- Турели: поворотные башни над лазерами и ракетницами ----------
+
+const turretAngle = new Map<number, number>();
+
+/** Башня с двойным стволом: следит за целью (плавный поворот), без цели — смотрит наружу и медленно водит стволом. */
+function drawTurrets(
+  ctx: CanvasRenderingContext2D,
+  own: OwnShipView,
+  l: { w: number; h: number },
+  pos: { x: number; y: number },
+  target: Contact | undefined,
+  S: ToScreen,
+  ts: number,
+  t: number,
+): void {
+  const hostile = target && (target.k === 'npc' || target.k === 'ship');
+  for (const m of own.modules) {
+    if (m.type !== 'laser' && m.type !== 'missile') continue;
+    const w = moduleWorld(pos, l, m.x, m.y);
+    const p = S(w.x, w.y);
+    let want: number;
+    if (hostile && m.powered && m.enabled && m.hp > 0) {
+      const tp = interp(target.id, target.x, target.y);
+      want = Math.atan2(tp.y - w.y, tp.x - w.x);
+    } else want = Math.atan2(w.y - pos.y, w.x - pos.x) + Math.sin(t * 0.4 + m.id) * 0.5;
+    const cur = turretAngle.get(m.id) ?? want;
+    const diff = Math.atan2(Math.sin(want - cur), Math.cos(want - cur));
+    const a = cur + diff * 0.15;
+    turretAngle.set(m.id, a);
+    const r = ts * 0.32;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    // Тень башни.
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath();
+    ctx.arc(r * 0.15, r * 0.2, r * 1.05, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.rotate(a);
+    // Стволы (у ракетницы — короткие толстые направляющие).
+    const missile = m.type === 'missile';
+    const len = missile ? ts * 0.55 : ts * 0.78;
+    const bw = missile ? ts * 0.14 : ts * 0.075;
+    for (const dy of [-1, 1]) {
+      const y = dy * ts * (missile ? 0.11 : 0.09);
+      const g = ctx.createLinearGradient(0, y - bw / 2, 0, y + bw / 2);
+      g.addColorStop(0, '#b6bec8');
+      g.addColorStop(0.5, '#6d757f');
+      g.addColorStop(1, '#2f353c');
+      ctx.fillStyle = g;
+      ctx.fillRect(r * 0.4, y - bw / 2, len, bw);
+      ctx.fillStyle = '#1a1d21';
+      ctx.fillRect(r * 0.4 + len - bw * 0.6, y - bw / 2, bw * 0.6, bw);
+    }
+    // Купол башни: сталь с бликом сверху-слева, красная полоса ART_STYLE.
+    ctx.rotate(-a);
+    const dome = ctx.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.1, 0, 0, r);
+    dome.addColorStop(0, '#c9ccd1');
+    dome.addColorStop(0.6, '#7f8894');
+    dome.addColorStop(1, '#3e454e');
+    ctx.fillStyle = dome;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#8e2b2b';
+    ctx.lineWidth = Math.max(1, ts * 0.04);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.68, a - 0.6, a + 0.6);
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 // ---------- Гиперпрыжок: зарядка и выход в новой системе (только визуал) ----------
