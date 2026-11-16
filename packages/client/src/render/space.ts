@@ -14,6 +14,7 @@ import { interp, store, worldToScreen } from '../store';
 import { NEBULA_SIZE, nebulaBlobs, tileOffset, wrappedCenters } from './nebula';
 import { drawHull, drawInterior, moduleWorld } from './ship';
 import { drawParticles, explosion, impact, trail } from './particles';
+import { drawSunlit, setStarColor, toSunAngle } from './sunlight';
 import { asteroidSprite, crateSprite, drawPlanetBody, drawStar, npcSprite, stationSprite } from './gen/space';
 
 interface Star {
@@ -141,6 +142,7 @@ export function drawSpace(ctx: CanvasRenderingContext2D, W: number, H: number, t
   const sun = S(0, 0);
   const starColor = STAR_SYSTEMS[snap.systemId]?.star ?? '#fff';
   drawStar(ctx, sun.x, sun.y, 160 * z, starColor, t);
+  setStarColor(starColor);
 
   for (const c of snap.contacts) {
     if (c.k === 'planet') drawPlanet(ctx, c, S, z);
@@ -162,7 +164,7 @@ export function drawSpace(ctx: CanvasRenderingContext2D, W: number, H: number, t
     if (l) {
       const ts = TILE_WORLD * z;
       // Чужой корабль виден только снаружи — без комнат.
-      drawHull(ctx, l, { id: c.id, cx: p.x, cy: p.y, ts, heading, moving, own: false, shieldFrac: c.maxShield ? c.shield / c.maxShield : 0, variant: 'closed' }, t);
+      drawHull(ctx, l, { id: c.id, cx: p.x, cy: p.y, ts, heading, moving, own: false, shieldFrac: c.maxShield ? c.shield / c.maxShield : 0, variant: 'closed', sunAngle: toSunAngle(pos.x, pos.y) }, t);
       if (c.miningId !== null) {
         const a = snap.contacts.find((o) => o.id === c.miningId);
         if (a) beam(ctx, p, S(a.x, a.y), '#ffee58', t);
@@ -183,7 +185,7 @@ export function drawSpace(ctx: CanvasRenderingContext2D, W: number, H: number, t
     if (l) {
       const heading = store.mode === 'system' ? headingFor(own.id, own.vx, own.vy) : 0;
       const variant = store.mode === 'ship' ? 'open' : 'closed';
-      drawHull(ctx, l, { id: own.id, cx: p.x, cy: p.y, ts, heading, moving, own: true, shieldFrac: own.maxShield ? own.shield / own.maxShield : 0, variant }, t);
+      drawHull(ctx, l, { id: own.id, cx: p.x, cy: p.y, ts, heading, moving, own: true, shieldFrac: own.maxShield ? own.shield / own.maxShield : 0, variant, sunAngle: toSunAngle(pos.x, pos.y) }, t);
       if (store.mode === 'ship') {
         const ox = p.x - (l.w / 2) * ts;
         const oy = p.y - (l.h / 2) * ts;
@@ -338,7 +340,7 @@ function drawStation(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'st
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.rotate(t * 0.03);
-  ctx.drawImage(stationSprite(c.id), -size / 2, -size / 2, size, size);
+  drawSunlit(ctx, stationSprite(c.id), -size / 2, -size / 2, size, size, toSunAngle(c.x, c.y) - t * 0.03);
   // Огни на кольце и шлюзах.
   ctx.globalCompositeOperation = 'lighter';
   for (let i = 0; i < 8; i++) {
@@ -369,7 +371,7 @@ function drawAsteroid(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'a
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.rotate(spin);
-  ctx.drawImage(asteroidSprite(c.id, Object.keys(c.res) as Resource[]), -size / 2, -size / 2, size, size);
+  drawSunlit(ctx, asteroidSprite(c.id, Object.keys(c.res) as Resource[]), -size / 2, -size / 2, size, size, toSunAngle(c.x, c.y) - spin);
   ctx.restore();
 }
 
@@ -433,7 +435,7 @@ function drawNpc(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'npc' }
       ctx.restore();
     }
     const size = r * (c.type === 'sentinel' ? 2.4 : 2.8);
-    ctx.drawImage(npcSprite(c.type), -size / 2, -size / 2, size, size);
+    drawSunlit(ctx, npcSprite(c.type), -size / 2, -size / 2, size, size, toSunAngle(pos.x, pos.y) - c.heading);
   }
   ctx.restore();
   if (c.shield > 0) {

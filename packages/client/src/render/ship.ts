@@ -2,6 +2,7 @@
 import { MODULES, TEMP_COMFORT_MAX, TEMP_COMFORT_MIN, TILE_WORLD, isModuleType, moduleSize, type ModuleType, type OwnShipView, type Physical } from '@starforce/shared';
 import { store, type ParsedLayout } from '../store';
 import { hullFor } from './gen/hullStore';
+import { drawSunlit } from './sunlight';
 import { wallMask, wallTile } from './gen/interior';
 import { DOOR_CELL, WALL_CELL, drawCell, drawPawn, drawStackArt, floorCell } from './kenney';
 import { drawModule, roundRect } from './modules';
@@ -240,6 +241,8 @@ export interface HullDrawOpts {
   shieldFrac: number;
   /** open — вырез под интерьер; closed — крыша отсеков (вид снаружи). */
   variant: 'open' | 'closed';
+  /** Направление на звезду в мире (рад) — корпус подсвечен с этой стороны. Нет — без затенения. */
+  sunAngle?: number;
 }
 
 /** Внешняя обшивка корабля: сгенерированный спрайт + факелы, огни и щит, которые меняются каждый кадр. */
@@ -293,7 +296,8 @@ export function drawHull(ctx: CanvasRenderingContext2D, l: ParsedLayout, o: Hull
   }
 
   ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(sprite.canvas, X(-sprite.offX), Y(-sprite.offY), sprite.canvas.width * k, sprite.canvas.height * k);
+  if (o.sunAngle !== undefined) drawSunlit(ctx, sprite.canvas, X(-sprite.offX), Y(-sprite.offY), sprite.canvas.width * k, sprite.canvas.height * k, o.sunAngle - o.heading);
+  else ctx.drawImage(sprite.canvas, X(-sprite.offX), Y(-sprite.offY), sprite.canvas.width * k, sprite.canvas.height * k);
 
   // Бортовые огни: мигают по очереди.
   ctx.save();
