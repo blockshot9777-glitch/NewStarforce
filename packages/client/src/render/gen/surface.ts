@@ -74,37 +74,89 @@ export function shuttleSprite(): HTMLCanvasElement {
 export function creatureSprite(type: CreatureType): HTMLCanvasElement {
   return cache.get(type, () => {
     switch (type) {
-      case 'vine':
-        // Колючий стебель, свёрнутый вокруг пасти-ловушки.
+      case 'vine': {
+        // Хищный цветок: лепестки вокруг зубастой пасти, светящиеся прожилки,
+        // шипастые щупальца-плети расходятся спиралью.
+        const TEND = 6;
         return shapeSprite(
           S,
           (g, s) => {
-            const pts: [number, number][] = [];
-            for (let a = 0; a < Math.PI * 5; a += 0.08) {
-              const r = s * (0.08 + a * 0.024);
-              pts.push([s / 2 + Math.cos(a) * r, s / 2 + Math.sin(a) * r]);
+            const c = s / 2;
+            for (let k = 0; k < TEND; k++) {
+              const a0 = (k / TEND) * Math.PI * 2 + 0.3;
+              // Плеть сужается к концу: несколько отрезков всё тоньше, с изгибом.
+              let px = c;
+              let py = c;
+              for (let j = 1; j <= 8; j++) {
+                const t = j / 8;
+                const a = a0 + t * 1.1;
+                const r = s * (0.16 + t * 0.32);
+                const nx = c + Math.cos(a) * r;
+                const ny = c + Math.sin(a) * r;
+                line(g, [[px, py], [nx, ny]], s * (0.07 - t * 0.05));
+                // Шипы на внешней стороне.
+                if (j % 2 === 0 && j < 8) {
+                  const ox = Math.cos(a - 0.9) * s * 0.035;
+                  const oy = Math.sin(a - 0.9) * s * 0.035;
+                  g.beginPath();
+                  g.moveTo(nx - oy * 0.3, ny + ox * 0.3);
+                  g.lineTo(nx + ox * 1.4, ny + oy * 1.4);
+                  g.lineTo(nx + oy * 0.3, ny - ox * 0.3);
+                  g.fill();
+                }
+                px = nx;
+                py = ny;
+              }
             }
-            line(g, pts, s * 0.08);
-            g.beginPath();
-            g.arc(s / 2, s / 2, s * 0.13, 0, Math.PI * 2);
-            g.fill();
+            // Пять лепестков.
+            for (let k = 0; k < 5; k++) {
+              const a = (k / 5) * Math.PI * 2 - Math.PI / 2;
+              g.beginPath();
+              g.ellipse(c + Math.cos(a) * s * 0.11, c + Math.sin(a) * s * 0.11, s * 0.14, s * 0.075, a, 0, Math.PI * 2);
+              g.fill();
+            }
           },
           (u, v, edge, base) => {
-            const d = Math.hypot(u - 0.5, v - 0.5);
-            const mouth = d < 0.13;
-            const teeth = mouth && d > 0.09 && Math.sin(Math.atan2(v - 0.5, u - 0.5) * 12) > 0.4;
-            const spot = !mouth && hash2(Math.floor(u * 40), Math.floor(v * 40), 7) > 0.93;
+            const dx = u - 0.5;
+            const dy = v - 0.5;
+            const d = Math.hypot(dx, dy);
+            const a = Math.atan2(dy, dx);
+            if (d < 0.075) {
+              // Пасть: тёмная глотка, по краю — кольцо зубов.
+              const teeth = d > 0.05 && Math.sin(a * 11) > 0.2;
+              return {
+                h: teeth ? 0.6 : -0.8 + d * 8,
+                color: teeth ? hex('#e9dfc0') : mix(hex('#24060f'), hex('#8a1f3c'), d / 0.075),
+                alpha: 1,
+                gloss: teeth ? 0.8 : 0.6,
+              };
+            }
+            if (d < 0.26) {
+              // Лепесток: мясистый, от багрового у пасти к зелёному на кончике, светящаяся прожилка.
+              const pa = ((a + Math.PI / 2) / ((Math.PI * 2) / 5)) % 1;
+              const vein = Math.abs(((pa + 1) % 1) - 0.5) < 0.04 && d > 0.09;
+              const k = Math.min(1, (d - 0.075) / 0.18);
+              return {
+                h: base * 1.6 + Math.sin(k * Math.PI) * 0.6,
+                color: vein ? hex('#d8f05a') : mix(hex('#7a1d3e'), hex('#3f7a2a'), k),
+                alpha: 1,
+                gloss: 0.45,
+                emit: vein ? [70, 90, 0] : undefined,
+              };
+            }
+            // Плеть: тёмная кора с поперечными кольцами, светлее на свету.
+            const ring = Math.sin(d * 140) > 0.75;
             return {
-              h: base * 1.5 + (mouth ? -0.6 + d * 4 : 0),
-              color: teeth ? hex('#efe6c8') : mouth ? mix(hex('#5a1546'), hex('#b0306f'), d / 0.13) : spot ? hex('#d8e84a') : mix(hex('#1f4a1d'), hex('#4f8a2e'), edge * 12),
+              h: base * 1.4 - (ring ? 0.15 : 0),
+              color: mix(hex('#1b3a17'), hex('#4f8030'), Math.min(1, edge * 30)),
               alpha: 1,
-              gloss: mouth ? 0.7 : 0.2,
-              emit: spot ? [80, 90, 0] : undefined,
+              gloss: 0.2,
             };
           },
-          0.04,
+          0.03,
           5,
         );
+      }
       case 'stalker':
         // Шестиногий охотник из коры и мха, светящиеся глаза.
         return shapeSprite(
@@ -140,33 +192,63 @@ export function creatureSprite(type: CreatureType): HTMLCanvasElement {
           0.05,
           5,
         );
-      case 'sporeling':
-        // Гриб-спорник: шляпка в пятнах, по краю — отростки.
+      case 'sporeling': {
+        // Спорник: гроздь дождевиков разного размера на корнях, поры светятся, на макушке — споровые щели.
+        const caps: [number, number, number][] = [
+          [0.5, 0.46, 0.2],
+          [0.33, 0.62, 0.13],
+          [0.66, 0.64, 0.14],
+          [0.48, 0.73, 0.1],
+        ];
         return shapeSprite(
           S,
           (g, s) => {
-            g.beginPath();
-            for (let i = 0; i <= 40; i++) {
-              const a = (i / 40) * Math.PI * 2;
-              const r = s * (0.3 + 0.04 * Math.sin(a * 9));
-              g.lineTo(s / 2 + Math.cos(a) * r, s / 2 + Math.sin(a) * r);
+            for (let k = 0; k < 7; k++) {
+              const a = (k / 7) * Math.PI * 2 + 0.4;
+              line(g, [[s * 0.5, s * 0.58], [s * (0.5 + Math.cos(a) * 0.3), s * (0.58 + Math.sin(a) * 0.3)], [s * (0.5 + Math.cos(a + 0.3) * 0.42), s * (0.58 + Math.sin(a + 0.3) * 0.42)]], s * 0.022);
             }
-            g.fill();
+            for (const [x, y, r] of caps) {
+              g.beginPath();
+              g.arc(s * x, s * y, s * r, 0, Math.PI * 2);
+              g.fill();
+            }
           },
-          (u, v, edge, base) => {
-            const d = Math.hypot(u - 0.5, v - 0.5);
-            const spot = fbm(u * 9, v * 9, 31, 2) > 0.62;
+          (u, v, _edge, base) => {
+            // Высота — самый высокий из куполов над точкой.
+            let h = -1;
+            let ci = -1;
+            let dd = 1;
+            caps.forEach(([x, y, r], k) => {
+              const d = Math.hypot(u - x, v - y) / r;
+              if (d < 1) {
+                const hh = Math.sqrt(1 - d * d) * r * 9;
+                if (hh > h) {
+                  h = hh;
+                  ci = k;
+                  dd = d;
+                }
+              }
+            });
+            if (ci < 0) {
+              // Корни.
+              return { h: base * 0.8, color: hex('#3b3a1c'), alpha: 1, gloss: 0.1 };
+            }
+            const [cx, cy] = caps[ci];
+            const pore = hash2(Math.floor(u * 50), Math.floor(v * 50), 31 + ci) > 0.9 && dd < 0.85;
+            const slit = dd < 0.3 && Math.abs((u - cx) * 0.7 + (v - cy) * 0.7) < 0.008;
+            const skin = fbm(u * 18, v * 18, 33 + ci, 3);
             return {
-              h: base + Math.sqrt(Math.max(0, 1 - (d / 0.32) ** 2)) * 1.6,
-              color: spot ? hex('#f1f7a8') : mix(hex('#6d7a16'), hex('#b8c936'), Math.min(1, edge * 8)),
+              h: h + skin * 0.25 - (slit ? 0.5 : 0),
+              color: slit ? hex('#e8ff70') : pore ? hex('#c6e83a') : mix(hex('#4a4f17'), hex('#a3a845'), Math.min(1, (1 - dd) * 0.9 + skin * 0.3)),
               alpha: 1,
-              gloss: 0.3,
-              emit: spot ? [50, 60, 0] : undefined,
+              gloss: 0.35,
+              emit: slit ? [160, 200, 30] : pore ? [70, 90, 10] : undefined,
             };
           },
-          0.05,
-          4,
+          0.03,
+          5,
         );
+      }
       case 'drone_scout':
         // Квадрокоптер Машин: крестовина, четыре винта, красный глаз.
         return shapeSprite(
@@ -259,44 +341,77 @@ export function creatureSprite(type: CreatureType): HTMLCanvasElement {
           0.05,
           5,
         );
-      case 'beast':
-        // Четвероногий травоядный зверь с рожками.
+      case 'beast': {
+        // Панцирный травоядный: вытянутое тело с роговыми пластинами вдоль хребта,
+        // голова с изогнутыми рогами (вверх), четыре лапы, хвост.
         return shapeSprite(
           S,
           (g, s) => {
-            for (const [x, y] of [
-              [0.32, 0.38],
-              [0.68, 0.38],
-              [0.32, 0.72],
-              [0.68, 0.72],
+            // Лапы — согнутые, чуть вперёд/назад.
+            for (const [x0, y0, x1, y1] of [
+              [0.4, 0.4, 0.24, 0.32],
+              [0.6, 0.4, 0.76, 0.32],
+              [0.4, 0.68, 0.25, 0.78],
+              [0.6, 0.68, 0.75, 0.78],
             ]) {
+              line(g, [[s * x0, s * y0], [s * (x0 + x1) / 2, s * ((y0 + y1) / 2 + 0.02)], [s * x1, s * y1]], s * 0.07);
+            }
+            // Хвост.
+            line(g, [[s * 0.5, s * 0.8], [s * 0.53, s * 0.9], [s * 0.48, s * 0.97]], s * 0.045);
+            // Тело и голова.
+            g.beginPath();
+            g.ellipse(s * 0.5, s * 0.55, s * 0.16, s * 0.27, 0, 0, Math.PI * 2);
+            g.fill();
+            g.beginPath();
+            g.ellipse(s * 0.5, s * 0.22, s * 0.085, s * 0.1, 0, 0, Math.PI * 2);
+            g.fill();
+            // Рога загибаются назад.
+            for (const sg of [-1, 1]) {
               g.beginPath();
-              g.ellipse(s * x, s * y, s * 0.06, s * 0.08, 0, 0, Math.PI * 2);
+              g.moveTo(s * (0.5 + sg * 0.04), s * 0.17);
+              g.quadraticCurveTo(s * (0.5 + sg * 0.17), s * 0.08, s * (0.5 + sg * 0.15), s * 0.22);
+              g.lineTo(s * (0.5 + sg * 0.12), s * 0.18);
+              g.quadraticCurveTo(s * (0.5 + sg * 0.12), s * 0.13, s * (0.5 + sg * 0.03), s * 0.2);
               g.fill();
             }
-            g.beginPath();
-            g.ellipse(s * 0.5, s * 0.56, s * 0.17, s * 0.25, 0, 0, Math.PI * 2);
-            g.fill();
-            g.beginPath();
-            g.ellipse(s * 0.5, s * 0.24, s * 0.09, s * 0.11, 0, 0, Math.PI * 2);
-            g.fill();
-            line(g, [[s * 0.45, s * 0.17], [s * 0.38, s * 0.08]], s * 0.025);
-            line(g, [[s * 0.55, s * 0.17], [s * 0.62, s * 0.08]], s * 0.025);
           },
-          (u, v, _e, base) => {
-            const fur = fbm(u * 20, v * 6, 13, 3);
-            const horn = v < 0.16;
-            const eye = Math.hypot(u - 0.46, v - 0.22) < 0.014 || Math.hypot(u - 0.54, v - 0.22) < 0.014;
+          (u, v, edge, base) => {
+            const dx = u - 0.5;
+            const horn = v < 0.24 && Math.abs(dx) > 0.075;
+            if (horn) {
+              const ring = Math.sin(v * 160) > 0.6;
+              return { h: base * 1.3 + 0.3, color: ring ? hex('#a99d83') : hex('#ddd3bb'), alpha: 1, gloss: 0.6 };
+            }
+            const eye = Math.hypot(Math.abs(dx) - 0.05, v - 0.2) < 0.013;
+            const fur = fbm(u * 26, v * 9, 13, 3);
+            // Пластины панциря: поперечные ряды вдоль хребта, шире в середине тела.
+            const inBody = Math.hypot(dx / 0.16, (v - 0.55) / 0.27) < 1;
+            const plateW = 0.11 * Math.sqrt(Math.max(0, 1 - ((v - 0.55) / 0.26) ** 2));
+            const onPlates = inBody && Math.abs(dx) < plateW;
+            if (onPlates) {
+              // Ряды изогнуты дугой назад — чешуя-шевроны, а не «лесенка».
+              const row = (v - 0.3 - dx * dx * 6) / 0.09;
+              const fr = row - Math.floor(row);
+              const seam = fr < 0.07;
+              const bulge = Math.sin(fr * Math.PI) * 0.5;
+              return {
+                h: base * 1.5 + 0.7 + bulge - (seam ? 0.4 : 0),
+                color: seam ? hex('#3d352c') : mix(hex('#5e554a'), hex('#8d8270'), fur * 0.6 + bulge * 0.6),
+                alpha: 1,
+                gloss: 0.5,
+              };
+            }
             return {
-              h: base * 1.5 + fur * 0.3,
-              color: eye ? hex('#1a1a1a') : horn ? hex('#d9cfb8') : mix(hex('#5b4a3c'), hex('#a08d76'), fur),
+              h: base * 1.5 + fur * 0.35,
+              color: eye ? hex('#0d0d0d') : mix(hex('#4a3a2e'), hex('#9a8670'), fur * 0.8 + Math.min(1, edge * 10) * 0.2),
               alpha: 1,
-              gloss: horn ? 0.6 : 0.1,
+              gloss: eye ? 1 : 0.1,
             };
           },
-          0.05,
+          0.04,
           5,
         );
+      }
     }
   });
 }
