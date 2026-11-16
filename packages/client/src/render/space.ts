@@ -1,6 +1,7 @@
 // Космос: многослойный фон с параллаксом, звезда, планеты, станции, астероиды, корабли, враги, эффекты.
 import {
   BIOMES,
+  JUMP_CHARGE_SECONDS,
   NPCS,
   SAFE_ZONE_RADIUS,
   STAR_SYSTEMS,
@@ -366,7 +367,78 @@ export function drawSpace(ctx: CanvasRenderingContext2D, W: number, H: number, t
       ctx.stroke();
     }
   }
+  drawJump(ctx, W, H, own ? S(interp(own.id, own.x, own.y).x, interp(own.id, own.x, own.y).y) : null, own?.jump?.timeLeft ?? null, snap.systemId, t);
   return { interior };
+}
+
+// ---------- Гиперпрыжок: зарядка и выход в новой системе (только визуал) ----------
+
+let jumpSystem = -1;
+let arrivedAt = -1e9;
+
+/**
+ * Пока прыжок заряжается — к кораблю стягиваются кольца энергии, под конец экран прорезают радиальные
+ * «звёздные полосы». После смены системы — вспышка и затухающие полосы ~1.2 с.
+ */
+function drawJump(ctx: CanvasRenderingContext2D, W: number, H: number, ship: { x: number; y: number } | null, timeLeft: number | null, systemId: number, t: number): void {
+  const now = performance.now();
+  if (jumpSystem !== systemId) {
+    if (jumpSystem !== -1) arrivedAt = now;
+    jumpSystem = systemId;
+  }
+  const since = (now - arrivedAt) / 1000;
+  const charge = timeLeft !== null ? Math.max(0, Math.min(1, 1 - timeLeft / JUMP_CHARGE_SECONDS)) : 0;
+  const streak = Math.max(timeLeft !== null ? Math.max(0, (charge - 0.6) / 0.4) : 0, since < 1.2 ? 1 - since / 1.2 : 0);
+  if (charge <= 0 && streak <= 0) return;
+  const cx = ship?.x ?? W / 2;
+  const cy = ship?.y ?? H / 2;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  // Кольца энергии сходятся к кораблю.
+  if (charge > 0 && ship) {
+    for (let k = 0; k < 3; k++) {
+      const ph = (t * 0.8 + k / 3) % 1;
+      const r = (1 - ph) * (140 + 220 * charge);
+      ctx.strokeStyle = `rgba(110,200,255,${(0.15 + 0.5 * charge) * ph})`;
+      ctx.lineWidth = 1.5 + 3 * charge * ph;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 120 * charge + 20);
+    g.addColorStop(0, `rgba(160,220,255,${0.35 * charge})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(cx - 160, cy - 160, 320, 320);
+  }
+  // Звёздные полосы от центра к краям.
+  if (streak > 0) {
+    const R = Math.hypot(W, H) / 2;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 140; i++) {
+      const h = Math.sin(i * 91.7) * 43758.5453;
+      const r1 = h - Math.floor(h);
+      const a = (i / 140) * Math.PI * 2 + r1 * 0.3;
+      const speed = 0.6 + r1 * 0.9;
+      const pos = ((t * speed * 1.6 + r1) % 1) * R;
+      const len = (30 + 220 * streak) * speed * (0.3 + pos / R);
+      const x0 = cx + Math.cos(a) * pos;
+      const y0 = cy + Math.sin(a) * pos;
+      ctx.strokeStyle = `rgba(${190 + r1 * 60},${220 + r1 * 35},255,${0.6 * streak * (pos / R)})`;
+      ctx.lineWidth = 1 + streak * 1.5 * speed;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x0 + Math.cos(a) * len, y0 + Math.sin(a) * len);
+      ctx.stroke();
+    }
+  }
+  // Вспышка выхода из прыжка.
+  if (since < 0.6) {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = `rgba(210,235,255,${0.85 * (1 - since / 0.6) ** 2})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.restore();
 }
 
 function crewInterp(own: OwnShipView): Map<number, { x: number; y: number }> {
