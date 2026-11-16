@@ -982,3 +982,157 @@ export function systemDistance(a: number, b: number): number {
   const sb = STAR_SYSTEMS[b];
   return Math.hypot(sa.gx - sb.gx, sa.gy - sb.gy);
 }
+
+// ---------- События в космосе: сигналы ----------
+// Сигнал — точка интереса в системе. Радиосигнал слышен по всей системе, но что это — видно только вблизи
+// (или с радаром). Подлетев, игрок выбирает вариант; исход случаен (по весам) и решается на сервере.
+
+export type SignalKind = 'wreck' | 'distress' | 'trader' | 'anomaly';
+
+export interface SignalOutcome {
+  /** Вес исхода среди исходов варианта. */
+  weight: number;
+  text: string;
+  level: 'info' | 'good' | 'warn' | 'bad';
+  /** Добыча (каждое число случайно ±SIGNAL_GAIN_SPREAD). */
+  gain?: Partial<Resources>;
+  /** Засада: кто и сколько появляется рядом и сразу атакует. */
+  ambush?: Partial<Record<NpcType, number>>;
+  /** Урон корпусу (взрыв, мина). */
+  damage?: number;
+  /** Щит обнуляется. */
+  drainShield?: boolean;
+  /** Выживший вступает в команду (если нет места — благодарит кредитами SIGNAL_SURVIVOR_REWARD). */
+  survivor?: boolean;
+}
+
+export interface SignalOption {
+  label: string;
+  hint: string;
+  cost?: Partial<Resources>;
+  /** Вариант доступен только с работающим радаром. */
+  needsRadar?: boolean;
+  outcomes: SignalOutcome[];
+}
+
+export interface SignalDef {
+  name: string;
+  text: string;
+  /** Вес при выборе вида нового сигнала. */
+  weight: number;
+  options: SignalOption[];
+}
+
+/** Ближе этого расстояния можно принять решение по сигналу. */
+export const SIGNAL_RANGE = 160;
+/** Ближе этого расстояния (или с радаром в радиусе сенсоров) видно, что это за сигнал. */
+export const SIGNAL_IDENT_RANGE = 600;
+export const SIGNAL_TTL_SECONDS = 900;
+export const SIGNAL_MAX_PER_SYSTEM = 3;
+/** Шанс появления сигнала при проверке населения системы (раз в 5 с), пока их меньше максимума. */
+export const SIGNAL_SPAWN_CHANCE = 0.04;
+export const SIGNAL_GAIN_SPREAD = 0.3;
+export const SIGNAL_SURVIVOR_REWARD = 100;
+/** На каком расстоянии от сигнала появляется засада. */
+export const SIGNAL_AMBUSH_DISTANCE: readonly [number, number] = [260, 420];
+
+export const SIGNALS: Record<SignalKind, SignalDef> = {
+  wreck: {
+    name: 'Обломки ковчега',
+    text: 'Разбитый корпус ковчега медленно вращается в пустоте. Реактор ещё тёплый — катастрофа случилась недавно.',
+    weight: 4,
+    options: [
+      {
+        label: 'Снять обшивку',
+        hint: 'Немного металла, без риска.',
+        outcomes: [{ weight: 1, text: 'Команда срезает уцелевшие листы обшивки.', level: 'good', gain: { metal: 35 } }],
+      },
+      {
+        label: 'Вскрыть грузовой отсек',
+        hint: 'Добыча богаче, но обломки могут быть приманкой.',
+        outcomes: [
+          { weight: 55, text: 'В отсеке — нетронутые контейнеры.', level: 'good', gain: { metal: 30, crystals: 8, food: 15 } },
+          { weight: 30, text: 'Это приманка Машин! Из-за обломков выходят дроны.', level: 'bad', gain: { metal: 12 }, ambush: { drone: 2 } },
+          { weight: 15, text: 'Отсек был заминирован. Взрыв задел корпус.', level: 'bad', damage: 30 },
+        ],
+      },
+    ],
+  },
+  distress: {
+    name: 'Сигнал бедствия',
+    text: 'Спасательная капсула передаёт слабый сигнал. Датчики показывают: внутри кто-то жив.',
+    weight: 3,
+    options: [
+      {
+        label: 'Принять на борт',
+        hint: 'Понадобятся еда и вода. Возможно, это ловушка.',
+        cost: { food: 10, water: 10 },
+        outcomes: [
+          { weight: 60, text: 'Выживший приходит в себя и просится в команду.', level: 'good', survivor: true },
+          { weight: 25, text: 'Спасённый инженер переводит вам свои сбережения и сойдёт на ближайшей станции.', level: 'good', gain: { credits: 140 } },
+          { weight: 15, text: 'Капсула пуста. Сигнал — ловушка Машин!', level: 'bad', ambush: { drone: 1, sentinel: 1 } },
+        ],
+      },
+      {
+        label: 'Забрать аварийный запас',
+        hint: 'Припасы капсулы — вам. Тому, кто внутри, они уже не помогут.',
+        outcomes: [
+          { weight: 70, text: 'Вы забираете аварийный запас. Сигнал затихает.', level: 'warn', gain: { food: 12, water: 8, credits: 30 } },
+          { weight: 30, text: 'Капсула пуста — кто-то успел раньше.', level: 'info' },
+        ],
+      },
+    ],
+  },
+  trader: {
+    name: 'Бродячий торговец',
+    text: 'Потрёпанный челнок без опознавательных знаков предлагает сделку — быстро и без лишних вопросов.',
+    weight: 3,
+    options: [
+      {
+        label: 'Купить кристаллы',
+        hint: 'Дешевле, чем на станции. Качество — на его совести.',
+        cost: { credits: 90 },
+        outcomes: [
+          { weight: 85, text: 'Кристаллы чистые. Хорошая сделка.', level: 'good', gain: { crystals: 12 } },
+          { weight: 15, text: 'Половина «кристаллов» оказалась стекляшками. Торговец уже далеко.', level: 'warn', gain: { crystals: 4 } },
+        ],
+      },
+      {
+        label: 'Купить припасы',
+        hint: 'Еда и вода с наценкой, зато здесь и сейчас.',
+        cost: { credits: 60 },
+        outcomes: [{ weight: 1, text: 'Ящики с пайками и канистры перегружены на борт.', level: 'good', gain: { food: 30, water: 20 } }],
+      },
+      {
+        label: 'Продать металл',
+        hint: 'Торговец берёт металл дороже станции.',
+        cost: { metal: 40 },
+        outcomes: [{ weight: 1, text: 'Торговец забирает металл и расплачивается не торгуясь.', level: 'good', gain: { credits: 110 } }],
+      },
+    ],
+  },
+  anomaly: {
+    name: 'Аномалия',
+    text: 'Пространство здесь мерцает, приборы фиксируют выбросы энергии. Корпус едва заметно гудит.',
+    weight: 2,
+    options: [
+      {
+        label: 'Войти в аномалию',
+        hint: 'Никто не знает, что будет.',
+        outcomes: [
+          { weight: 45, text: 'Выброс прошёл сквозь корпус — на обшивке выросли кристаллы.', level: 'good', gain: { crystals: 10 } },
+          { weight: 30, text: 'Выброс обнулил щиты.', level: 'warn', drainShield: true },
+          { weight: 25, text: 'Разряд ударил в корпус. Зато часть энергии осела кристаллами.', level: 'bad', damage: 20, gain: { crystals: 5 } },
+        ],
+      },
+      {
+        label: 'Просканировать радаром',
+        hint: 'Безопасно. Данные охотно купят на станции.',
+        needsRadar: true,
+        outcomes: [{ weight: 1, text: 'Радар записал структуру аномалии. За такие данные хорошо платят.', level: 'good', gain: { crystals: 5, credits: 70 } }],
+      },
+    ],
+  },
+};
+
+export const SIGNAL_KINDS = Object.keys(SIGNALS) as SignalKind[];

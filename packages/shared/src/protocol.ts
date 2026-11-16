@@ -1,9 +1,9 @@
 // Сообщения между клиентом и сервером. Клиент только просит — всё решает сервер.
 import type { Alert } from './alerts';
-import type { Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources } from './defs';
+import type { Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, SignalKind } from './defs';
 import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry, SurfaceActor, WorkPriority } from './state';
 
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 
 export type Command =
   | { c: 'move'; x: number; y: number }
@@ -29,6 +29,8 @@ export type Command =
   | { c: 'upgrade' }
   | { c: 'repair' }
   | { c: 'jump'; systemId: number }
+  /** Решение по сигналу, рядом с которым стоит корабль: номер варианта из SignalEventView.options. */
+  | { c: 'signal'; id: number; option: number }
   | { c: 'chat'; text: string };
 
 export type ClientMessage =
@@ -125,6 +127,23 @@ export interface OwnShipView {
   inSafeZone: boolean;
   /** Предупреждения капитану (что вот-вот убьёт экипаж и что делать). */
   alerts: Alert[];
+  /** Событие у сигнала, до которого корабль долетел (ждёт решения игрока), иначе null. */
+  event: SignalEventView | null;
+}
+
+export interface SignalEventView {
+  signalId: number;
+  kind: SignalKind;
+  name: string;
+  text: string;
+  options: {
+    label: string;
+    hint: string;
+    cost: Partial<Resources>;
+    /** Можно ли выбрать сейчас; если нет — why объясняет почему. */
+    ok: boolean;
+    why: string;
+  }[];
 }
 
 export type Contact =
@@ -172,7 +191,9 @@ export type Contact =
   | { k: 'loot'; id: number; x: number; y: number; res: Partial<Resources> }
   | { k: 'projectile'; id: number; x: number; y: number; vx: number; vy: number; kind: 'missile' | 'spore' }
   | { k: 'planet'; id: number; x: number; y: number; r: number; name: string; biome: Biome; colony: boolean }
-  | { k: 'station'; id: number; x: number; y: number; r: number; name: string };
+  | { k: 'station'; id: number; x: number; y: number; r: number; name: string }
+  /** Сигнал слышен по всей системе; kind известен только вблизи или с радаром, иначе null. */
+  | { k: 'signal'; id: number; x: number; y: number; kind: SignalKind | null };
 
 export interface MarketView {
   hostId: number;

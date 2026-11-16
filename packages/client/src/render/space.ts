@@ -4,6 +4,7 @@ import {
   JUMP_CHARGE_SECONDS,
   NPCS,
   SAFE_ZONE_RADIUS,
+  SIGNALS,
   STAR_SYSTEMS,
   TILE_WORLD,
   RESOURCE_NAMES,
@@ -225,6 +226,7 @@ export function drawSpace(ctx: CanvasRenderingContext2D, W: number, H: number, t
   for (const c of snap.contacts) {
     if (c.k === 'asteroid') drawAsteroid(ctx, c, S, z);
     if (c.k === 'loot') drawLoot(ctx, c, S, z);
+    if (c.k === 'signal') drawSignal(ctx, c, S, W, H, t);
   }
 
   // Чужие корабли.
@@ -593,6 +595,71 @@ function drawAsteroid(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'a
   ctx.restore();
 }
 
+const SIGNAL_COLOR: Record<string, string> = { wreck: '#b0bec5', distress: '#ff5252', trader: '#69f0ae', anomaly: '#ea80fc', unknown: '#ffd740' };
+
+/**
+ * Сигнал: маяк постоянного экранного размера (виден при любом масштабе) с расходящимися кольцами.
+ * Если он за краем экрана — стрелка-указатель у кромки, чтобы игрок знал, куда лететь.
+ */
+function drawSignal(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'signal' }>, S: ToScreen, W: number, H: number, t: number): void {
+  const p = S(c.x, c.y);
+  const color = SIGNAL_COLOR[c.kind ?? 'unknown'];
+  const name = c.kind ? SIGNALS[c.kind].name : 'Сигнал ?';
+  const left = 20;
+  const top = 90;
+  const right = W - 20;
+  const bottom = H - 70;
+  ctx.save();
+  if (p.x < left || p.x > right || p.y < top || p.y > bottom) {
+    // Указатель у края экрана.
+    const cx = W / 2;
+    const cy = H / 2;
+    const a = Math.atan2(p.y - cy, p.x - cx);
+    const k = Math.min((p.x > cx ? right - cx : cx - left) / Math.abs(Math.cos(a) || 1e-6), (p.y > cy ? bottom - cy : cy - top) / Math.abs(Math.sin(a) || 1e-6));
+    const ex = cx + Math.cos(a) * k;
+    const ey = cy + Math.sin(a) * k;
+    ctx.translate(ex, ey);
+    ctx.rotate(a);
+    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 4);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-14, -7);
+    ctx.lineTo(-10, 0);
+    ctx.lineTo(-14, 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  ctx.translate(p.x, p.y);
+  ctx.globalCompositeOperation = 'lighter';
+  for (let k = 0; k < 3; k++) {
+    const ph = (t * 0.6 + k / 3) % 1;
+    ctx.globalAlpha = (1 - ph) * 0.6;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 8 + ph * 34, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 14);
+  g.addColorStop(0, color);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(-14, -14, 28, 28);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.rotate(Math.PI / 4);
+  ctx.fillStyle = '#0b141a';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.fillRect(-5.5, -5.5, 11, 11);
+  ctx.strokeRect(-5.5, -5.5, 11, 11);
+  ctx.restore();
+  label(ctx, name, p.x, p.y + 24, color);
+}
+
 function drawLoot(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'loot' }>, S: ToScreen, z: number): void {
   const pos = interp(c.id, c.x, c.y);
   const p = S(pos.x, pos.y);
@@ -830,6 +897,16 @@ export function drawMinimap(ctx: CanvasRenderingContext2D, x: number, y: number,
     } else if (c.k === 'station') {
       ctx.fillStyle = '#69f0ae';
       ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+    } else if (c.k === 'signal') {
+      // Сигнал на карте мигает — его видно через всю систему.
+      ctx.fillStyle = SIGNAL_COLOR[c.kind ?? 'unknown'];
+      ctx.globalAlpha = 0.55 + 0.45 * Math.sin(performance.now() / 250);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-2.5, -2.5, 5, 5);
+      ctx.restore();
+      ctx.globalAlpha = 1;
     } else if (c.k === 'asteroid') {
       ctx.fillStyle = '#6d5f55';
       ctx.fillRect(p.x, p.y, 1.5, 1.5);

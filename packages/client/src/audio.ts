@@ -208,6 +208,16 @@ function click(): void {
   tone(o, ctx.currentTime, 'triangle', 2400, 1200, 0.03, 0.15, 0.001);
 }
 
+/** Сигнал открылся: событие ждёт решения капитана — два восходящих тона, как вызов по связи. */
+export function playHail(): void {
+  if (!ctx || muted || !allow('hail', 800)) return;
+  const t0 = ctx.currentTime + 0.02;
+  const o = out(0.4, 0);
+  if (!o) return;
+  tone(o, t0, 'sine', 587, 587, 0.18, 0.14);
+  tone(o, t0 + 0.14, 'sine', 880, 880, 0.3, 0.14);
+}
+
 /** Прыжок: нарастающий вой зарядки (start) и удар выхода в новой системе (arrive). */
 export function playJump(kind: 'start' | 'arrive'): void {
   if (!ctx || muted) return;

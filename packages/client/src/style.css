@@ -839,3 +839,56 @@ body:has(#login:not(.hidden)) #bottom {
 #tooltip .bad {
   color: var(--bad);
 }
+
+/* Событие у сигнала: карточка с вариантами решения. */
+.card.event {
+  border-color: rgba(255, 215, 64, 0.55);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.45),
+    0 0 18px rgba(255, 215, 64, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: event-in 0.25s ease-out;
+}
+.card.event .panel-title {
+  color: #ffd740;
+}
+.event-text {
+  margin: 4px 0 8px;
+  line-height: 1.45;
+}
+button.event-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  margin-top: 5px;
+  padding: 7px 10px;
+  text-align: left;
+}
+.event-label {
+  font-weight: 600;
+}
+.event-cost {
+  margin-left: 6px;
+  font-weight: 400;
+  color: var(--warn);
+}
+.event-hint {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+button.event-option:disabled .event-hint {
+  color: var(--bad);
+}
+@keyframes event-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card.event {
+    animation: none;
+  }
+}

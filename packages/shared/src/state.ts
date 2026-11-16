@@ -1,5 +1,5 @@
 // Состояние мира на сервере. Только простые данные (без классов), чтобы всё легко сохранялось в JSON.
-import type { Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, Tile } from './defs';
+import type { Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, SignalKind, Tile } from './defs';
 
 export interface Vec {
   x: number;
@@ -231,6 +231,16 @@ export interface Belt {
   r: number;
 }
 
+/** Точка интереса в космосе: обломки, сигнал бедствия, торговец, аномалия (см. SIGNALS в defs.ts). */
+export interface Signal {
+  id: number;
+  kind: SignalKind;
+  x: number;
+  y: number;
+  /** Сколько секунд сигнал ещё продержится. */
+  ttl: number;
+}
+
 export interface StarSystem {
   id: number;
   planets: Planet[];
@@ -240,6 +250,7 @@ export interface StarSystem {
   asteroids: Asteroid[];
   npcs: Npc[];
   loot: Loot[];
+  signals: Signal[];
   projectiles: Projectile[];
   /** Визуальные эффекты текущего тика (не сохраняются). */
   fx: Fx[];

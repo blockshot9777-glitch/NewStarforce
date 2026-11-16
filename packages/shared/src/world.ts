@@ -29,6 +29,16 @@ import {
   SAFE_ZONE_RADIUS,
   SECTOR_SIZE,
   SELL_PRICE,
+  SIGNALS,
+  SIGNAL_AMBUSH_DISTANCE,
+  SIGNAL_GAIN_SPREAD,
+  SIGNAL_IDENT_RANGE,
+  SIGNAL_KINDS,
+  SIGNAL_MAX_PER_SYSTEM,
+  SIGNAL_RANGE,
+  SIGNAL_SPAWN_CHANCE,
+  SIGNAL_SURVIVOR_REWARD,
+  SIGNAL_TTL_SECONDS,
   STAR_SYSTEMS,
   TICK_RATE,
   TILE_CHARS,
@@ -45,6 +55,7 @@ import {
   type NpcType,
   type Resource,
   type Resources,
+  type SignalKind,
   type WeaponDef,
 } from './defs';
 import { clearOrder, isPiloted, normalizePriorities, orderCryo, orderMove, placeCrewOnBoard, setDraft, setPriority, toggleUrgent, updateCrew } from './crew';
@@ -52,7 +63,7 @@ import { normalizeTemp } from './temp';
 import { shipAlerts, trackRates } from './alerts';
 import { allBoarded, generateSurface, landCrew, orderSurfaceMove, stepSurface, toggleSurfaceMark } from './surface';
 import { dropCarry, giveShip, materialsReady, normalizeStorage, putInStockpile, removeStored, syncStored, takeShip } from './items';
-import type { Command, Contact, LayoutView, OwnShipView, Snapshot, SurfaceView } from './protocol';
+import type { Command, Contact, LayoutView, OwnShipView, SignalEventView, Snapshot, SurfaceView } from './protocol';
 import { Rng } from './rng';
 import {
   createStarterShip,
@@ -87,6 +98,7 @@ import type {
   Ship,
   StarSystem,
   Station,
+  Signal,
   Vec,
 } from './state';
 
@@ -187,7 +199,11 @@ export class World {
 
   static fromJSON(json: string): World {
     const state = JSON.parse(json) as WorldState;
-    for (const sys of state.systems) sys.fx = [];
+    for (const sys of state.systems) {
+      sys.fx = [];
+      // Сохранения до событий в космосе.
+      sys.signals ??= [];
+    }
     for (const ship of state.ships) {
       normalizeStorage(ship, () => state.nextId++);
       normalizeTemp(ship);
@@ -233,6 +249,7 @@ export class World {
       asteroids: [],
       npcs: [],
       loot: [],
+      signals: [],
       projectiles: [],
       fx: [],
     };
@@ -471,6 +488,8 @@ export class World {
       this.updateNpcs(sys, dt);
       this.updateProjectiles(sys, dt);
       this.updateLoot(sys, dt);
+      for (const sg of sys.signals) sg.ttl -= dt;
+      sys.signals = sys.signals.filter((sg) => sg.ttl > 0);
       for (const m of sys.markets) {
         m.refreshIn -= dt;
         if (m.refreshIn <= 0) this.restockMarket(m);
@@ -957,6 +976,117 @@ export class World {
     for (const [type, count] of Object.entries(def.npcs) as [NpcType, number][]) {
       if (sys.npcs.filter((n) => n.type === type).length < count && this.rng.chance(0.3)) this.spawnNpc(sys, type);
     }
+    if (sys.signals.length < SIGNAL_MAX_PER_SYSTEM && this.rng.chance(SIGNAL_SPAWN_CHANCE)) this.spawnSignal(sys);
+  }
+
+  // ---------- События в космосе ----------
+
+  /** Новый сигнал в системе: вид — по весам SIGNALS, место — вне безопасных зон. */
+  spawnSignal(sys: StarSystem, kind?: SignalKind, at?: Vec): Signal {
+    const total = SIGNAL_KINDS.reduce((s, k) => s + SIGNALS[k].weight, 0);
+    let roll = this.rng.range(0, total);
+    let picked: SignalKind = SIGNAL_KINDS[0];
+    for (const k of SIGNAL_KINDS) {
+      roll -= SIGNALS[k].weight;
+      if (roll < 0) {
+        picked = k;
+        break;
+      }
+    }
+    let p: Vec = { x: 0, y: 0 };
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const a = this.rng.range(0, Math.PI * 2);
+      const d = this.rng.range(1200, 3600);
+      p = { x: Math.cos(a) * d, y: Math.sin(a) * d };
+      if (!this.inSafeZone(sys, p, 400)) break;
+    }
+    const signal: Signal = { id: this.nextId(), kind: kind ?? picked, x: at?.x ?? p.x, y: at?.y ?? p.y, ttl: SIGNAL_TTL_SECONDS };
+    sys.signals.push(signal);
+    for (const ship of this.activeShips(sys.id)) this.log(this.ownerOf(ship), 'Приборы ловят неопознанный сигнал. Он отмечен на карте системы.', 'info');
+    return signal;
+  }
+
+  /** Есть ли на корабле работающий радар (сканер). */
+  private hasScanner(ship: Ship): boolean {
+    return ship.modules.some((m) => m.type === 'radar' && functional(m) && m.powered);
+  }
+
+  /** Событие у ближайшего сигнала в радиусе SIGNAL_RANGE — что видит и может выбрать игрок. */
+  signalEvent(ship: Ship, sys: StarSystem): SignalEventView | null {
+    let near: Signal | null = null;
+    for (const sg of sys.signals) if (dist(sg, ship) <= SIGNAL_RANGE && (!near || dist(sg, ship) < dist(near, ship))) near = sg;
+    if (!near) return null;
+    const def = SIGNALS[near.kind];
+    const scanner = this.hasScanner(ship);
+    return {
+      signalId: near.id,
+      kind: near.kind,
+      name: def.name,
+      text: def.text,
+      options: def.options.map((o) => {
+        const why = o.needsRadar && !scanner ? 'Нужен работающий радар' : o.cost && !hasResources(ship.res, o.cost) ? `Нужно: ${formatLoot(o.cost)}` : '';
+        return { label: o.label, hint: o.hint, cost: { ...(o.cost ?? {}) }, ok: !why, why };
+      }),
+    };
+  }
+
+  /** Игрок выбрал вариант: списать цену, разыграть исход по весам, применить последствия, убрать сигнал. */
+  private resolveSignal(player: Player, ship: Ship, sys: StarSystem, id: unknown, option: unknown): string | null {
+    if (!isInt(id) || !isInt(option)) return 'Некорректный выбор';
+    const signal = sys.signals.find((sg) => sg.id === id);
+    if (!signal) return 'Сигнал пропал';
+    if (dist(signal, ship) > SIGNAL_RANGE) return 'Подлетите ближе к сигналу';
+    const def = SIGNALS[signal.kind];
+    const opt = def.options[option];
+    if (!opt || option < 0) return 'Нет такого варианта';
+    if (opt.needsRadar && !this.hasScanner(ship)) return 'Нужен работающий радар';
+    if (opt.cost && (!hasResources(ship.res, opt.cost) || !takeShip(ship, opt.cost))) return `Нужно: ${formatLoot(opt.cost)}`;
+    const total = opt.outcomes.reduce((s, o) => s + o.weight, 0);
+    let roll = this.rng.range(0, total);
+    let out = opt.outcomes[0];
+    for (const o of opt.outcomes) {
+      roll -= o.weight;
+      if (roll < 0) {
+        out = o;
+        break;
+      }
+    }
+    sys.signals = sys.signals.filter((sg) => sg !== signal);
+    let text = `${def.name}: ${out.text}`;
+    if (out.gain) {
+      const gain: Partial<Resources> = {};
+      for (const [k, v] of Object.entries(out.gain) as [Resource, number][]) {
+        gain[k] = Math.max(1, Math.round(v * this.rng.range(1 - SIGNAL_GAIN_SPREAD, 1 + SIGNAL_GAIN_SPREAD)));
+      }
+      giveShip(ship, gain, this.nextId);
+      text += ` Получено: ${formatLoot(gain)}.`;
+    }
+    if (out.survivor) {
+      if (this.totalCrew(ship) < HULLS[ship.hull].crewCap) {
+        const c = randomCrew(this.rng, this.nextId(), 0, 0);
+        placeCrewOnBoard(ship, c);
+        text += ` На борт поднимается ${c.name}.`;
+      } else {
+        giveShip(ship, { credits: SIGNAL_SURVIVOR_REWARD }, this.nextId);
+        text += ` Мест в команде нет — выживший сойдёт на станции и оставляет вам ${SIGNAL_SURVIVOR_REWARD} кредитов.`;
+      }
+    }
+    if (out.drainShield) ship.shield = 0;
+    this.log(player, text, out.level);
+    if (out.ambush) {
+      for (const [type, count] of Object.entries(out.ambush) as [NpcType, number][]) {
+        for (let i = 0; i < count; i++) {
+          const a = this.rng.range(0, Math.PI * 2);
+          const d = this.rng.range(SIGNAL_AMBUSH_DISTANCE[0], SIGNAL_AMBUSH_DISTANCE[1]);
+          const p = { x: signal.x + Math.cos(a) * d, y: signal.y + Math.sin(a) * d };
+          const nd = NPCS[type];
+          sys.npcs.push({ id: this.nextId(), type, x: p.x, y: p.y, vx: 0, vy: 0, heading: Math.atan2(ship.y - p.y, ship.x - p.x), hp: nd.maxHp, shield: nd.maxShield, cooldown: 0, targetShipId: ship.id, wander: p });
+        }
+      }
+    }
+    // Урон — последним: корабль может не пережить взрыв.
+    if (out.damage) this.damageShip(sys, ship, out.damage, 1, null);
+    return null;
   }
 
   // ---------- Экспедиции ----------
@@ -1095,6 +1225,8 @@ export class World {
       }
       case 'trade':
         return this.trade(ship, cmd.resource, cmd.amount);
+      case 'signal':
+        return this.resolveSignal(player, ship, sys, cmd.id, cmd.option);
       case 'recruit': {
         if (!this.marketNear(ship)) return 'Нанять команду можно только у станции или колонии';
         if (this.totalCrew(ship) >= HULLS[ship.hull].crewCap) return 'Корабль переполнен — нужен корпус побольше';
@@ -1316,6 +1448,7 @@ export class World {
       orbitId: this.orbitOf(ship)?.id ?? null,
       inSafeZone: this.inSafeZone(sys, ship),
       alerts: shipAlerts(ship),
+      event: this.signalEvent(ship, sys),
     };
   }
 
@@ -1394,6 +1527,11 @@ export class World {
       const res: Partial<Record<Resource, number>> = {};
       for (const [k, v] of Object.entries(a.res)) if ((v ?? 0) > 0) res[k as Resource] = scanner ? Math.round(v!) : -1;
       contacts.push({ k: 'asteroid', id: a.id, x: a.x, y: a.y, r: a.r, res });
+    }
+    // Сигнал — радиопередача: слышен по всей системе. Что это такое, видно только вблизи или радаром в радиусе сенсоров.
+    for (const sg of sys.signals) {
+      const known = !!ship && (dist(sg, ship) <= SIGNAL_IDENT_RANGE || (scanner && visible(sg)));
+      contacts.push({ k: 'signal', id: sg.id, x: sg.x, y: sg.y, kind: known ? sg.kind : null });
     }
     for (const l of sys.loot) if (visible(l)) contacts.push({ k: 'loot', id: l.id, x: l.x, y: l.y, res: l.res });
     for (const p of sys.projectiles) if (visible(p)) contacts.push({ k: 'projectile', id: p.id, x: p.x, y: p.y, vx: p.vx, vy: p.vy, kind: p.kind });

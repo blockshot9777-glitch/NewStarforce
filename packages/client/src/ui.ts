@@ -12,6 +12,7 @@ import {
   RESOURCES,
   RESOURCE_NAMES,
   ROBOT_COST,
+  SIGNALS,
   STAR_SYSTEMS,
   STRUCTURE_COST,
   STRUCTURE_WORK,
@@ -224,12 +225,16 @@ function handleAction(el: HTMLElement): void {
     case 'untarget':
       send({ c: 'target', id: null });
       break;
+    case 'signal':
+      send({ c: 'signal', id, option: Number(el.dataset.opt) });
+      break;
     case 'goto': {
       const c = store.snap?.contacts.find((o) => o.id === id);
       if (c && own) {
         const r = 'r' in c ? c.r : 20;
         const d = Math.hypot(c.x - own.x, c.y - own.y) || 1;
-        const stand = r + 120;
+        // К сигналу нужно подойти вплотную — иначе событие не откроется.
+        const stand = c.k === 'signal' ? 60 : r + 120;
         send({ c: 'move', x: c.x + ((own.x - c.x) / d) * stand, y: c.y + ((own.y - c.y) / d) * stand });
       }
       break;
@@ -473,6 +478,8 @@ function contactTitle(c: Contact): string {
       return 'Контейнер с грузом';
     case 'projectile':
       return c.kind === 'missile' ? 'Ракета' : 'Спора';
+    case 'signal':
+      return c.kind ? SIGNALS[c.kind].name : 'Неопознанный сигнал';
   }
 }
 
@@ -481,6 +488,7 @@ function renderContext(own: OwnShipView | null): void {
   const snap = store.snap!;
   const parts: string[] = [];
   if (own) {
+    if (own.event) parts.push(eventCard(own.event));
     const pawn = store.selectedCrew !== null ? own.crew.find((c) => c.id === store.selectedCrew) : undefined;
     if (pawn) parts.push(pawnCard(pawn));
     const sel = store.selectedId !== null ? snap.contacts.find((c) => c.id === store.selectedId) : undefined;
@@ -512,6 +520,22 @@ function renderContext(own: OwnShipView | null): void {
     el.classList.remove('hidden');
     setHtml(el, parts.join(''));
   } else el.classList.add('hidden');
+}
+
+/** Событие у сигнала: описание и варианты решения (как в FTL). Исход решает сервер. */
+function eventCard(ev: NonNullable<OwnShipView['event']>): string {
+  const options = ev.options
+    .map((o, i) => {
+      const cost = Object.entries(o.cost) as [Resource, number][];
+      const price = cost.length ? ` <span class="event-cost">${cost.map(([k, v]) => `${RES_ICON[k]}${v}`).join(' ')}</span>` : '';
+      return `<button class="event-option" data-act="signal" data-id="${ev.signalId}" data-opt="${i}" ${o.ok ? '' : 'disabled'}>
+        <span class="event-label">${esc(o.label)}${price}</span>
+        <span class="event-hint">${esc(o.ok ? o.hint : o.why)}</span></button>`;
+    })
+    .join('');
+  return `<div class="card event event-${ev.kind}"><div class="panel-title">${esc(ev.name)}</div>
+    <div class="event-text">${esc(ev.text)}</div>${options}
+    <div class="hint">Не хотите вмешиваться — просто улетайте.</div></div>`;
 }
 
 function pawnCard(c: OwnShipView['crew'][number]): string {
@@ -582,6 +606,13 @@ function selectionPanel(own: OwnShipView, c: Contact): string {
       break;
     case 'loot':
       lines.push(`<div>${Object.entries(c.res).map(([k, v]) => `${RES_ICON[k as Resource]} ${v}`).join(' ')}</div><div class="muted">Тяговый луч подберёт груз вблизи.</div>`);
+      break;
+    case 'signal':
+      lines.push(
+        c.kind
+          ? `<div>${esc(SIGNALS[c.kind].text)}</div><div class="muted">Подлетите вплотную, чтобы принять решение.</div>`
+          : '<div class="muted">Источник не опознан. Подлетите ближе — или включите радар, он опознаёт сигналы издалека.</div>',
+      );
       break;
     default:
       break;

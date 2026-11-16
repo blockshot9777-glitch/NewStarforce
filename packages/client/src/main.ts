@@ -6,7 +6,7 @@ import { loadSprites } from './render/modules';
 import { loadPainted } from './render/painted';
 import { drawBackdrop, drawMinimap, drawSpace, type SpaceRenderResult } from './render/space';
 import { drawPlanetSurface, forgetTerrain, terrainImage, type PlanetLayout } from './render/planet';
-import { initAudio, playJump, toggleMute, updateLoops } from './audio';
+import { initAudio, playHail, playJump, toggleMute, updateLoops } from './audio';
 import { runGallery } from './render/gallery';
 import { PostFx } from './render/post';
 import { interp, screenToWorld, store, toast, worldToTile } from './store';
@@ -414,6 +414,7 @@ function drawHurt(now: number): void {
 }
 
 let lastJumping = false;
+let lastEventId: number | null = null;
 let lastSystem = -1;
 
 /** Петли звука (двигатель, бур) и звуки прыжка — по состоянию своего корабля. */
@@ -426,6 +427,10 @@ function updateSound(): void {
   const speed = Math.hypot(own.vx, own.vy) / Math.max(1, own.maxSpeed);
   const mining = own.targetId !== null && own.modules.some((m) => m.type === 'mining_laser' && m.active);
   updateLoops(speed, mining);
+  // Долетели до сигнала — событие открылось.
+  const eventId = own.event?.signalId ?? null;
+  if (eventId !== null && eventId !== lastEventId) playHail();
+  lastEventId = eventId;
   const jumping = !!own.jump;
   if (jumping && !lastJumping) playJump('start');
   lastJumping = jumping;
