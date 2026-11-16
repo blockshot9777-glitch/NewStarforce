@@ -1,4 +1,5 @@
 // Состояние клиента: последние снимки сервера, кэш планировок, выбор игрока и настройки камеры.
+import { playFx, playLog } from './audio';
 import {
   CHAR_TILES,
   TILE_WORLD,
@@ -84,8 +85,14 @@ export function applySnapshot(s: Snapshot): void {
     store.landingId = null;
     store.planetCrew = null;
   }
-  for (const fx of s.fx) store.fx.push({ fx, born: now });
-  for (const e of s.log) store.log.push({ ...e, at: now });
+  for (const fx of s.fx) {
+    store.fx.push({ fx, born: now });
+    if (store.mode !== 'planet') playFx(fx, store.cam, store.zoom);
+  }
+  for (const e of s.log) {
+    store.log.push({ ...e, at: now });
+    playLog(e);
+  }
   for (const c of s.chat) store.chat.push({ ...c, at: now });
   if (store.log.length > 60) store.log.splice(0, store.log.length - 60);
   if (store.chat.length > 60) store.chat.splice(0, store.chat.length - 60);

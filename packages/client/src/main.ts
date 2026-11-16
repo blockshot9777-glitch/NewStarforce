@@ -6,6 +6,7 @@ import { loadSprites } from './render/modules';
 import { loadPainted } from './render/painted';
 import { drawBackdrop, drawMinimap, drawSpace, type SpaceRenderResult } from './render/space';
 import { drawPlanetSurface, terrainImage, type PlanetLayout } from './render/planet';
+import { initAudio, playJump, toggleMute, updateLoops } from './audio';
 import { runGallery } from './render/gallery';
 import { PostFx } from './render/post';
 import { interp, screenToWorld, store, toast, worldToTile } from './store';
@@ -285,6 +286,12 @@ function onKey(e: KeyboardEvent): void {
     }
   }
   switch (e.key) {
+    case 'm':
+    case 'M':
+    case 'ь':
+    case 'Ь':
+      toast(toggleMute() ? 'Звук выключен (M)' : 'Звук включён (M)');
+      break;
     case 'Tab':
     case ' ':
       e.preventDefault();
@@ -361,7 +368,28 @@ function frame(now: number): void {
   }
 }
 
+let lastJumping = false;
+let lastSystem = -1;
+
+/** Петли звука (двигатель, бур) и звуки прыжка — по состоянию своего корабля. */
+function updateSound(): void {
+  const own = store.snap?.ship;
+  if (!own || !store.snap) {
+    updateLoops(0, false);
+    return;
+  }
+  const speed = Math.hypot(own.vx, own.vy) / Math.max(1, own.maxSpeed);
+  const mining = own.targetId !== null && own.modules.some((m) => m.type === 'mining_laser' && m.active);
+  updateLoops(speed, mining);
+  const jumping = !!own.jump;
+  if (jumping && !lastJumping) playJump('start');
+  lastJumping = jumping;
+  if (lastSystem !== -1 && lastSystem !== store.snap.systemId) playJump('arrive');
+  lastSystem = store.snap.systemId;
+}
+
 function drawFrame(now: number): void {
+  updateSound();
   const snap = store.snap;
   if (!snap) {
     drawBackdrop(ctx, W, H, now / 1000);
@@ -443,6 +471,7 @@ loadPainted();
 loadSprites();
 if (kenneyEnabled()) loadKenney();
 initUi();
+initAudio();
 start();
 post = PostFx.create(canvas);
 requestAnimationFrame(frame);
