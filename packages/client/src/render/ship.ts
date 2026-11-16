@@ -709,6 +709,7 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
     ctx.translate(-p.x, -(p.y + ts * 0.3) + bob);
     drawCrew(ctx, c, p.x, p.y, ts, c.id === store.selectedCrew, store.expeditionCrew.has(c.id), t);
     ctx.restore();
+    drawCrewBubble(ctx, c, p.x, p.y - ts * 0.62 + bob, ts, t);
   }
 
   for (const c of ship.crew) {
@@ -944,6 +945,106 @@ function drawLighting(ctx: CanvasRenderingContext2D, ship: OwnShipView, l: Parse
 const SUITS = ['#1a3a5c', '#3e4a32', '#5c4033', '#37474f', '#4a2c2a'];
 const HAIR = ['#1a1a1a', '#8d6e63', '#e6c27a', '#3e2723', '#6d4c41'];
 const SKIN = ['#f1c27d', '#e0ac69', '#8d5524', '#c68642', '#ffdbac'];
+
+/** Значок занятия (или тревоги) над головой — как в RimWorld/Space Haven: видно, кто чем занят. */
+function drawCrewBubble(ctx: CanvasRenderingContext2D, c: OwnShipView['crew'][number], x: number, y: number, ts: number, t: number): void {
+  if (ts < 18 || c.state === 'cryo') return;
+  const urgent = c.health < 35 ? 'hurt' : !c.robot && c.food < 15 ? 'food' : !c.robot && c.rest < 10 ? 'rest' : null;
+  const icon = urgent ?? (c.job ?? (c.state === 'sleeping' ? 'sleep' : c.state === 'eating' ? 'eat' : c.state === 'healing' ? 'heal' : null));
+  if (!icon) return;
+  const r = Math.min(11, ts * 0.22);
+  const by = y - r * 0.4 + (urgent ? Math.sin(t * 6) * r * 0.15 : 0);
+  ctx.save();
+  // Пузырь: тёмное стекло с бирюзовой кромкой; тревога — красная и пульсирует.
+  ctx.fillStyle = urgent ? 'rgba(70,10,10,0.85)' : 'rgba(6,22,30,0.82)';
+  ctx.strokeStyle = urgent ? `rgba(255,82,82,${0.7 + 0.3 * Math.sin(t * 6)})` : 'rgba(0,229,255,0.65)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(x, by, r, 0, Math.PI * 2);
+  ctx.moveTo(x - r * 0.35, by + r * 0.9);
+  ctx.lineTo(x, by + r * 1.45);
+  ctx.lineTo(x + r * 0.35, by + r * 0.9);
+  ctx.fill();
+  ctx.stroke();
+  ctx.translate(x, by);
+  const k = r * 0.55;
+  ctx.strokeStyle = urgent ? '#ff8a80' : '#d8f3f8';
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.lineWidth = Math.max(1.2, r * 0.16);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  switch (icon) {
+    case 'build':
+    case 'repair': // гаечный ключ
+      ctx.moveTo(-k * 0.8, k * 0.8);
+      ctx.lineTo(k * 0.2, -k * 0.2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(k * 0.45, -k * 0.45, k * 0.42, Math.PI * 0.25, Math.PI * 1.85);
+      ctx.stroke();
+      break;
+    case 'harvest': // лист
+      ctx.moveTo(-k * 0.8, k * 0.8);
+      ctx.quadraticCurveTo(-k * 0.8, -k * 0.8, k * 0.8, -k * 0.8);
+      ctx.quadraticCurveTo(k * 0.8, k * 0.8, -k * 0.8, k * 0.8);
+      ctx.fill();
+      break;
+    case 'pilot': // штурвал-стрелка
+      ctx.arc(0, 0, k * 0.8, 0, Math.PI * 2);
+      ctx.moveTo(0, -k * 0.8);
+      ctx.lineTo(0, k * 0.8);
+      ctx.moveTo(-k * 0.8, 0);
+      ctx.lineTo(k * 0.8, 0);
+      ctx.stroke();
+      break;
+    case 'extinguish': // капля
+      ctx.fillStyle = '#4fc3f7';
+      ctx.moveTo(0, -k * 0.9);
+      ctx.quadraticCurveTo(k * 0.85, k * 0.1, 0, k * 0.85);
+      ctx.quadraticCurveTo(-k * 0.85, k * 0.1, 0, -k * 0.9);
+      ctx.fill();
+      break;
+    case 'haul': // ящик
+      ctx.strokeRect(-k * 0.75, -k * 0.6, k * 1.5, k * 1.2);
+      ctx.moveTo(-k * 0.75, -k * 0.1);
+      ctx.lineTo(k * 0.75, -k * 0.1);
+      ctx.stroke();
+      break;
+    case 'cryo': // снежинка
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI;
+        ctx.moveTo(Math.cos(a) * k * 0.85, Math.sin(a) * k * 0.85);
+        ctx.lineTo(-Math.cos(a) * k * 0.85, -Math.sin(a) * k * 0.85);
+      }
+      ctx.stroke();
+      break;
+    case 'sleep':
+    case 'rest': // «z»
+      ctx.moveTo(-k * 0.6, -k * 0.6);
+      ctx.lineTo(k * 0.6, -k * 0.6);
+      ctx.lineTo(-k * 0.6, k * 0.6);
+      ctx.lineTo(k * 0.6, k * 0.6);
+      ctx.stroke();
+      break;
+    case 'eat':
+    case 'food': // вилка
+      ctx.moveTo(0, k * 0.9);
+      ctx.lineTo(0, -k * 0.2);
+      for (const dx of [-0.45, 0, 0.45]) {
+        ctx.moveTo(dx * k, -k * 0.2);
+        ctx.lineTo(dx * k, -k * 0.85);
+      }
+      ctx.stroke();
+      break;
+    case 'heal':
+    case 'hurt': // крест
+      ctx.fillRect(-k * 0.22, -k * 0.75, k * 0.44, k * 1.5);
+      ctx.fillRect(-k * 0.75, -k * 0.22, k * 1.5, k * 0.44);
+      break;
+  }
+  ctx.restore();
+}
 
 function drawCrew(
   ctx: CanvasRenderingContext2D,
