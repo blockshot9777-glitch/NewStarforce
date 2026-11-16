@@ -168,6 +168,7 @@ export function createStarterShip(opts: {
       maxSpeed: 0,
       sensorRange: BASE_SENSOR_RANGE,
       piloted: false,
+      rates: {},
     },
     lastCombatTick: -1000,
     jump: null,

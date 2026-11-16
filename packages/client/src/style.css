@@ -511,3 +511,52 @@ button.chip {
     max-height: 40vh;
   }
 }
+
+#alerts {
+  position: fixed;
+  left: 8px;
+  top: 100px;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 2;
+}
+
+.alert {
+  background: rgba(30, 22, 6, 0.9);
+  border: 1px solid #ffab40;
+  border-left-width: 4px;
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: help;
+}
+
+.alert-bad {
+  background: rgba(45, 8, 8, 0.92);
+  border-color: #ff5252;
+  animation: alert-pulse 1.6s ease-in-out infinite;
+}
+
+.alert-hint {
+  display: none;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.alert:hover .alert-hint {
+  display: block;
+}
+
+@keyframes alert-pulse {
+  50% {
+    box-shadow: 0 0 10px rgba(255, 82, 82, 0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert-bad {
+    animation: none;
+  }
+}

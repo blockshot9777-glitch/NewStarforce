@@ -5,6 +5,7 @@ export * from './grid';
 export * from './air';
 export * from './temp';
 export * from './ship';
+export * from './alerts';
 export * from './items';
 export * from './crew';
 export * from './protocol';

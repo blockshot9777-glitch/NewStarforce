@@ -478,10 +478,11 @@ export const TRACTOR_RANGE = 320;
 export const TRACTOR_SPEED = 160;
 export const LOOT_TTL = 120;
 export const MINING_CHUNK = 3;
-export const O2_GEN_WATER = 0.05;
+// Баланс воды: стартовый корабль без вмешательства игрока держится ~30 минут (тест «баланс»).
+export const O2_GEN_WATER = 0.03;
 export const WATER_RECYCLE_RATE = 0.1;
 export const HYDRO_GROW_SECONDS = 90;
-export const HYDRO_WATER = 0.03;
+export const HYDRO_WATER = 0.015;
 export const HYDRO_YIELD = 3;
 export const BASE_SENSOR_RANGE = 900;
 export const RADAR_BONUS = 900;
@@ -592,7 +593,7 @@ export const STARTER_GLYPHS: Record<string, ModuleType> = {
 
 export const STARTER_RESOURCES: Resources = {
   metal: 60,
-  ice: 30,
+  ice: 60,
   water: 40,
   crystals: 5,
   biomass: 10,
@@ -600,6 +601,15 @@ export const STARTER_RESOURCES: Resources = {
   credits: 200,
 };
 export const STARTER_CREW = 3;
+
+// ---------- Предупреждения ----------
+/** Окно сглаживания скорости расхода ресурсов, секунды. */
+export const RATE_WINDOW_SECONDS = 30;
+/** Скачки сильнее этого (торговля, подбор груза) не считаются расходом, единиц в минуту. */
+export const RATE_CLAMP_PER_MIN = 30;
+/** Предупреждать, если запас кончится раньше чем через столько минут; «тревога» — ещё раньше. */
+export const ALERT_ETA_WARN_MIN = 8;
+export const ALERT_ETA_BAD_MIN = 3;
 
 // ---------- Планеты ----------
 

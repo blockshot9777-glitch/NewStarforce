@@ -1,8 +1,9 @@
 // Сообщения между клиентом и сервером. Клиент только просит — всё решает сервер.
+import type { Alert } from './alerts';
 import type { Biome, BuildKind, HullClass, ModuleType, NpcType, Physical, Resource, Resources } from './defs';
 import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry, WorkPriority } from './state';
 
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 export type Command =
   | { c: 'move'; x: number; y: number }
@@ -120,6 +121,8 @@ export interface OwnShipView {
   /** id планеты, на орбите которой стоит корабль. */
   orbitId: number | null;
   inSafeZone: boolean;
+  /** Предупреждения капитану (что вот-вот убьёт экипаж и что делать). */
+  alerts: Alert[];
 }
 
 export type Contact =

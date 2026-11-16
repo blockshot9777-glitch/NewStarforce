@@ -51,6 +51,7 @@ import {
 } from './defs';
 import { clearOrder, isPiloted, normalizePriorities, orderCryo, orderMove, placeCrewOnBoard, setDraft, setPriority, toggleUrgent, updateCrew } from './crew';
 import { normalizeTemp } from './temp';
+import { shipAlerts, trackRates } from './alerts';
 import { dropCarry, giveShip, materialsReady, normalizeStorage, putInStockpile, removeStored, syncStored, takeShip } from './items';
 import type { Command, Contact, LayoutView, OwnShipView, Snapshot } from './protocol';
 import { Rng } from './rng';
@@ -189,6 +190,7 @@ export class World {
     for (const ship of state.ships) {
       normalizeStorage(ship, () => state.nextId++);
       normalizeTemp(ship);
+      ship.stats.rates ??= {};
       for (const c of ship.crew) normalizePriorities(c);
     }
     for (const e of state.expeditions) {
@@ -450,7 +452,11 @@ export class World {
     const dt = DT;
     this.state.tick++;
     for (const sys of this.state.systems) sys.fx = [];
-    for (const ship of this.activeShips()) this.updateShip(ship, dt);
+    for (const ship of this.activeShips()) {
+      const before = { ...ship.res };
+      this.updateShip(ship, dt);
+      trackRates(ship, before, dt);
+    }
     for (const sys of this.state.systems) {
       this.updateNpcs(sys, dt);
       this.updateProjectiles(sys, dt);
@@ -1301,6 +1307,7 @@ export class World {
       marketId: market?.hostId ?? null,
       orbitId: this.orbitOf(ship)?.id ?? null,
       inSafeZone: this.inSafeZone(sys, ship),
+      alerts: shipAlerts(ship),
     };
   }
 

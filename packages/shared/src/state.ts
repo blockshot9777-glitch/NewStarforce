@@ -161,6 +161,8 @@ export interface ShipStats {
   maxSpeed: number;
   sensorRange: number;
   piloted: boolean;
+  /** Сглаженная скорость изменения ресурсов, единиц в минуту (для прогнозов в предупреждениях). */
+  rates: Partial<Record<Resource, number>>;
 }
 
 export interface Npc {

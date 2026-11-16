@@ -269,6 +269,7 @@ export function renderUi(force = false): void {
   if (!snap) return;
   const own = snap.ship;
   renderTop(own, snap.systemId, snap.population);
+  renderAlerts(own);
   renderButtons(own);
   renderBuild(own);
   renderCrew(own);
@@ -597,6 +598,17 @@ function renderGalaxy(own: OwnShipView | null, systemId: number): void {
     `<div class="panel-title">Галактика · дальность прыжка ${own.jumpRange.toFixed(1)} св. лет <button data-act="galaxy">✕</button></div>
      <svg viewBox="-20 -20 ${W + 40} ${H + 50}" width="100%">${nodes}</svg>${list}
      <div class="hint">Для прыжка нужны пилот на мостике и работающий двигатель. Больше двигателей — дальше прыжок.</div>`,
+  );
+}
+
+/** Предупреждения как в RimWorld: столбик слева, тревоги красным, подсказка — при наведении. */
+function renderAlerts(own: OwnShipView | null): void {
+  const alerts = own?.alerts ?? [];
+  setHtml(
+    $('alerts'),
+    alerts
+      .map((a) => `<div class="alert alert-${a.level}" title="${esc(a.hint)}">${a.level === 'bad' ? '⚠' : '•'} ${esc(a.text)}<div class="alert-hint">${esc(a.hint)}</div></div>`)
+      .join(''),
   );
 }
 
