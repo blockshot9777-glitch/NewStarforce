@@ -623,7 +623,7 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
       ctx.stroke();
     } else {
       ctx.globalAlpha = b.ready ? 0.55 : 0.22;
-      if (isModuleType(b.kind)) drawModule(ctx, b.kind as ModuleType, p.x, p.y, ts, { powered: true, active: false, growth: 0, hpFrac: 1, enabled: true }, t);
+      if (isModuleType(b.kind)) drawModule(ctx, b.kind as ModuleType, p.x, p.y, ts, { powered: true, active: false, growth: 0, hpFrac: 1, enabled: true, ghost: true }, t);
       else {
         ctx.fillStyle = b.kind === 'wall' ? '#90caf9' : b.kind === 'door' ? '#ffe082' : '#80deea';
         ctx.fillRect(p.x, p.y, ts, ts);

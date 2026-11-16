@@ -19,6 +19,8 @@ export interface ModuleLook {
   growth: number;
   hpFrac: number;
   enabled: boolean;
+  /** Чертёж/призрак постройки — без свечения работающего модуля. */
+  ghost?: boolean;
 }
 
 export function drawModule(ctx: CanvasRenderingContext2D, type: ModuleType, x: number, y: number, s: number, look: ModuleLook, t: number): void {
@@ -50,6 +52,7 @@ export function drawModule(ctx: CanvasRenderingContext2D, type: ModuleType, x: n
     drawProcedural(ctx, type, s, look, t, def.color);
     ctx.restore();
   }
+  if (!look.ghost && (look.powered || def.demand <= 0) && look.enabled && look.hpFrac > 0) moduleGlow(ctx, type, w, h, s, t, look.active);
   if (!look.powered && def.demand > 0 && look.enabled) {
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(0, 0, w, h);
@@ -81,6 +84,68 @@ export function drawModule(ctx: CanvasRenderingContext2D, type: ModuleType, x: n
       ctx.lineTo(w * 0.2, h * 0.8);
       ctx.stroke();
     }
+  }
+  ctx.restore();
+}
+
+const glows = new Map<string, HTMLCanvasElement>();
+/** Мягкое пятно света заданного цвета (заготовка — дешевле градиента каждый кадр). */
+function glowSprite(color: string): HTMLCanvasElement {
+  let c = glows.get(color);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, color);
+  gr.addColorStop(0.25, `${color}aa`);
+  gr.addColorStop(1, `${color}00`);
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  glows.set(color, c);
+  return c;
+}
+
+/** Что светится у модуля: цвет, радиус (в клетках), базовая яркость и как она «живёт» во времени. */
+const GLOW: Partial<Record<ModuleType, { c: string; r: number; a: number; f: (t: number, active: boolean) => number }>> = {
+  reactor: { c: '#ff8f00', r: 0.55, a: 0.55, f: (t) => 0.75 + 0.25 * Math.sin(t * 2.2) },
+  bridge: { c: '#4fc3f7', r: 0.4, a: 0.45, f: (t) => 0.85 + 0.15 * Math.sin(t * 13) * Math.sin(t * 3.1) },
+  shield_gen: { c: '#40c4ff', r: 0.5, a: 0.45, f: (t) => 0.7 + 0.3 * Math.sin(t * 3) },
+  medbay: { c: '#69f0ae', r: 0.45, a: 0.3, f: (t) => 0.85 + 0.15 * Math.sin(t * 1.5) },
+  hydroponics: { c: '#69f0ae', r: 0.5, a: 0.3, f: (t) => 0.9 + 0.1 * Math.sin(t * 0.9) },
+  lamp: { c: '#ffd180', r: 0.6, a: 0.6, f: (t) => 0.95 + 0.05 * Math.sin(t * 7) },
+  o2gen: { c: '#80deea', r: 0.35, a: 0.35, f: (t, on) => (on ? 0.8 + 0.2 * Math.sin(t * 4) : 0.4) },
+  water_recycler: { c: '#29b6f6', r: 0.35, a: 0.3, f: (t, on) => (on ? 0.8 + 0.2 * Math.sin(t * 2.6) : 0.4) },
+  battery: { c: '#b2ff59', r: 0.25, a: 0.4, f: (t) => (Math.sin(t * 2) > 0 ? 1 : 0.5) },
+  engine: { c: '#ff3d00', r: 0.45, a: 0.4, f: (t, on) => (on ? 0.9 + 0.1 * Math.sin(t * 30) : 0.35) },
+  heater: { c: '#ff6d00', r: 0.45, a: 0.4, f: (t, on) => (on ? 0.85 + 0.15 * Math.sin(t * 1.7) : 0.2) },
+  cooler: { c: '#80d8ff', r: 0.45, a: 0.35, f: (t, on) => (on ? 0.85 + 0.15 * Math.sin(t * 1.7) : 0.2) },
+  cryopod: { c: '#b3e5fc', r: 0.4, a: 0.35, f: (t) => 0.8 + 0.2 * Math.sin(t * 1.1) },
+  laser: { c: '#ff5252', r: 0.18, a: 0.6, f: (t) => (Math.sin(t * 3) > 0.6 ? 1 : 0.35) },
+  missile: { c: '#ff5252', r: 0.18, a: 0.6, f: (t) => (Math.sin(t * 3 + 1) > 0.6 ? 1 : 0.35) },
+  mining_laser: { c: '#ffee58', r: 0.2, a: 0.5, f: (t, on) => (on ? 0.8 + 0.2 * Math.sin(t * 20) : 0.3) },
+  radar: { c: '#69f0ae', r: 0.3, a: 0.35, f: () => 1 },
+};
+
+/** Свечение работающего модуля (сложением цвета) — после постобработки превращается в ореол. */
+function moduleGlow(ctx: CanvasRenderingContext2D, type: ModuleType, w: number, h: number, s: number, t: number, active: boolean): void {
+  const g = GLOW[type];
+  if (!g) return;
+  const r = g.r * s * Math.max(1, Math.min(w, h) / s);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = Math.max(0, Math.min(1, g.a * g.f(t, active)));
+  ctx.drawImage(glowSprite(g.c), w / 2 - r, h / 2 - r, r * 2, r * 2);
+  // Радар: бегущий луч развёртки.
+  if (type === 'radar') {
+    const a = t * 2.5;
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = '#69f0ae';
+    ctx.lineWidth = Math.max(1, s * 0.04);
+    ctx.beginPath();
+    ctx.moveTo(w / 2, h / 2);
+    ctx.lineTo(w / 2 + Math.cos(a) * s * 0.36, h / 2 + Math.sin(a) * s * 0.36);
+    ctx.stroke();
   }
   ctx.restore();
 }
