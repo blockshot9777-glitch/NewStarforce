@@ -108,6 +108,12 @@ npm start          # сборка клиента + сервер на :8787
   двери и походка — `paintDoorSliding`, `crewWalk` в `render/ship.ts`; тени облаков и частицы по биому —
   `drawAtmosphere` в `render/planet.ts`; гиперпрыжок — `drawJump` в `render/space.ts`; свет звезды на объектах —
   `render/sunlight.ts`; рисованная туманность — `nebulaPixels` (`render/nebula.ts`, считается в `nebulaWorker.ts`).
+- **Звук** — `packages/client/src/audio.ts`: синтез WebAudio без файлов (фон, двигатель, бур, бой, взрывы,
+  тревоги, прыжок, кнопки); громкость/панорама — `spatial` (тест `packages/client/test/audio.test.ts`); M — без звука.
+- **Отдача и читаемость (идеи FTL, Cosmoteer, RimWorld):** числа урона и встряска — `floaters`/`shake` в
+  `store.ts`, рисование в `drawFx`/`drawHurt`; турели — `drawTurrets` (`render/space.ts`); значки занятий —
+  `drawCrewBubble` (`render/ship.ts`); подсказка под курсором — `renderTooltip` (`ui.ts`); карточка стройки —
+  `drawToolPreview` (`main.ts`).
 - **Интерфейс** — стекло, уголки-скобы, полоски с бликом: блок «Современный вид интерфейса» в конце `style.css`.
 - Готовые PNG важнее процедурных: недостающие спрайты и промты — `docs/ASSETS_NEEDED.md`; спрайты
   грузятся через `render/painted.ts` (`drawPaintedSprite`). Рельеф планет — `render/terrain.ts`.
