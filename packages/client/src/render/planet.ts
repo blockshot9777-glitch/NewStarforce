@@ -2,6 +2,7 @@
 import { CREATURES, RESOURCE_NAMES, SURFACE_BIOMES, type ExpeditionView, type Physical, type Resource } from '@starforce/shared';
 import { store } from '../store';
 import { drawPaintedItem, drawPaintedPawn, drawPaintedSprite } from './painted';
+import { periodicFbm } from './nebula';
 import { renderTerrain } from './terrain';
 import { creatureSprite, depositSprite, shuttleSprite } from './gen/surface';
 
@@ -160,7 +161,86 @@ export function drawPlanetSurface(ctx: CanvasRenderingContext2D, W: number, H: n
   drawNodes(ctx, e, L, t);
   drawCreatures(ctx, e, L, t);
   drawCrew(ctx, e, L);
+  drawAtmosphere(ctx, W, H, e, L, t);
   return L;
+}
+
+// ---------- Атмосфера: тени облаков и частицы в воздухе (только визуал) ----------
+
+let cloudTex: HTMLCanvasElement | null = null;
+
+/** Тайл теней облаков (повторяется без шва): мягкие пятна из шума на торе. */
+function cloudShadows(): HTMLCanvasElement {
+  if (cloudTex) return cloudTex;
+  const N = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d')!;
+  const img = g.createImageData(N, N);
+  for (let y = 0; y < N; y++)
+    for (let x = 0; x < N; x++) {
+      const f = periodicFbm(x / N, y / N, 3, 77, 4);
+      const a = Math.max(0, Math.min(1, (f - 0.5) / 0.18));
+      const i = (y * N + x) * 4;
+      img.data[i] = 0;
+      img.data[i + 1] = 4;
+      img.data[i + 2] = 12;
+      img.data[i + 3] = a * a * (3 - 2 * a) * 255;
+    }
+  g.putImageData(img, 0, 0);
+  cloudTex = c;
+  return c;
+}
+
+/** Частицы по биому: цвет, размер, скорость дрейфа и свечение. */
+const AIR: Partial<Record<string, { c: string; n: number; size: number; vx: number; vy: number; glow: boolean }>> = {
+  jungle: { c: '#c6ff8a', n: 40, size: 1.6, vx: 6, vy: -4, glow: true },
+  toxic: { c: '#e6ff5c', n: 55, size: 1.8, vx: 4, vy: -6, glow: true },
+  volcanic: { c: '#ffab40', n: 60, size: 1.5, vx: 8, vy: -22, glow: true },
+  ice: { c: '#ffffff', n: 90, size: 1.8, vx: -14, vy: 26, glow: false },
+  desert: { c: '#e0b48a', n: 70, size: 1.3, vx: 46, vy: 6, glow: false },
+  ruins: { c: '#9aa3ad', n: 40, size: 1.4, vx: 10, vy: 8, glow: false },
+  terran: { c: '#fff8d0', n: 18, size: 1.3, vx: 6, vy: -2, glow: true },
+};
+
+function drawAtmosphere(ctx: CanvasRenderingContext2D, W: number, H: number, e: ExpeditionView, L: PlanetLayout, t: number): void {
+  const { ox, oy, ts } = L;
+  const mw = e.surface.w * ts;
+  const mh = e.surface.h * ts;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(ox, oy, mw, mh);
+  ctx.clip();
+  // Тени облаков: тайл 14 клеток, плывут по ветру; держатся на карте (двигаются вместе с камерой).
+  const tile = ts * 14;
+  const sx = ((t * ts * 0.35) % tile) - tile;
+  const sy = ((t * ts * 0.12) % tile) - tile;
+  ctx.globalAlpha = e.biome === 'volcanic' || e.biome === 'ruins' ? 0.35 : 0.28;
+  const c = cloudShadows();
+  for (let x = ox + sx; x < ox + mw; x += tile) for (let y = oy + sy; y < oy + mh; y += tile) ctx.drawImage(c, x, y, tile, tile);
+  // Частицы: детерминированные «семена» по индексу, позиция зациклена по экрану — без хранения состояния.
+  const air = AIR[e.biome];
+  if (air) {
+    ctx.globalAlpha = 1;
+    if (air.glow) ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = air.c;
+    const k = Math.max(0.6, ts / 36);
+    for (let i = 0; i < air.n; i++) {
+      const h1 = Math.sin(i * 12.9898) * 43758.5453;
+      const h2 = Math.sin(i * 78.233) * 12345.6789;
+      const r1 = h1 - Math.floor(h1);
+      const r2 = h2 - Math.floor(h2);
+      const sp = 0.6 + r2 * 0.8;
+      const px = (((r1 * W + t * air.vx * sp * k + Math.sin(t * 0.7 + i) * 8) % W) + W) % W;
+      const py = (((r2 * H + t * air.vy * sp * k + Math.cos(t * 0.9 + i) * 6) % H) + H) % H;
+      ctx.globalAlpha = (0.35 + 0.45 * (0.5 + 0.5 * Math.sin(t * 1.3 + i))) * (air.glow ? 0.8 : 0.6);
+      const s = air.size * k * (0.7 + r1 * 0.8);
+      ctx.beginPath();
+      ctx.arc(px, py, s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
 }
 
 
