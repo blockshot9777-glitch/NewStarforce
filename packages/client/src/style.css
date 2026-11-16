@@ -582,3 +582,220 @@ body.planet-mode #context {
   top: 84px;
   max-height: 46vh;
 }
+
+/* ---------- Современный вид интерфейса: стекло, тонкие кромки, уголки-скобы ----------
+   Палитра прежняя (ART_STYLE.md: тёмно-бирюзовый фон, рамка #00bcd4), но панели полупрозрачные
+   с размытием того, что под ними, мягкой тенью и подсвеченными уголками, как у HUD в sci-fi. */
+
+:root {
+  --glass: rgba(6, 20, 28, 0.62);
+  --glass-strong: rgba(6, 18, 26, 0.82);
+  --edge-soft: rgba(0, 188, 212, 0.32);
+  --radius: 10px;
+}
+
+body {
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+.panel,
+.card,
+#top,
+.overlay-card,
+#status {
+  background: linear-gradient(180deg, rgba(14, 40, 52, 0.55), var(--glass) 40%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--edge-soft);
+  border-radius: var(--radius);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 24px rgba(0, 188, 212, 0.05);
+}
+
+/* Уголки-скобы: верхний левый и нижний правый. */
+.panel,
+.card,
+.overlay-card {
+  position: relative;
+}
+.panel::before,
+.card::before,
+.overlay-card::before,
+.panel::after,
+.card::after,
+.overlay-card::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  border-color: var(--accent);
+  border-style: solid;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.7));
+}
+.panel::before,
+.card::before,
+.overlay-card::before {
+  top: -1px;
+  left: -1px;
+  border-width: 2px 0 0 2px;
+  border-top-left-radius: var(--radius);
+}
+.panel::after,
+.card::after,
+.overlay-card::after {
+  right: -1px;
+  bottom: -1px;
+  border-width: 0 2px 2px 0;
+  border-bottom-right-radius: var(--radius);
+}
+/* У фиксированных панелей position задан выше — не сбиваем его. */
+#build,
+#crew,
+#galaxy,
+#help,
+#dead,
+#login {
+  position: fixed;
+}
+
+.panel-title,
+.card > b:first-child {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+}
+.panel-title {
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(0, 188, 212, 0.18);
+}
+
+button {
+  background: linear-gradient(180deg, rgba(20, 70, 84, 0.75), rgba(8, 34, 44, 0.75));
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--edge-soft);
+  border-radius: 7px;
+  padding: 5px 11px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.08s,
+    background 0.15s;
+}
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, rgba(24, 96, 114, 0.85), rgba(10, 46, 58, 0.85));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 12px rgba(0, 229, 255, 0.35);
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+button.on {
+  background: linear-gradient(180deg, rgba(16, 140, 160, 0.9), rgba(8, 80, 92, 0.9));
+  border-color: var(--accent);
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+button.danger {
+  background: linear-gradient(180deg, rgba(120, 24, 24, 0.85), rgba(50, 8, 8, 0.85));
+  border-color: rgba(255, 82, 82, 0.7);
+}
+button.accent {
+  border-color: rgba(105, 240, 174, 0.75);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 10px rgba(105, 240, 174, 0.2);
+}
+button.big {
+  border-radius: 9px;
+}
+
+#chat-input,
+.planet-hint {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--edge-soft);
+  border-radius: 8px;
+}
+#chat-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.3);
+}
+
+/* Полоски HUD: скруглённые, с бликом и свечением своего цвета. */
+.meter-bar,
+.mini {
+  border-radius: 99px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.meter-bar {
+  height: 8px;
+}
+.meter-bar > div,
+.mini > div {
+  border-radius: 99px;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0) 55%);
+  box-shadow: 0 0 8px var(--c, transparent);
+  transition: width 0.4s ease-out;
+}
+.meter-label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10.5px;
+}
+
+/* Журнал событий: строки на мягкой тёмной подложке, свежие сверху ярче. */
+#log > div {
+  align-self: flex-start;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(4, 12, 18, 0.55), rgba(4, 12, 18, 0));
+}
+
+.alert {
+  background: rgba(36, 26, 6, 0.72);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+.alert-bad {
+  background: rgba(60, 10, 10, 0.75);
+}
+
+#toast {
+  background: rgba(70, 12, 12, 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  .meter-bar > div,
+  .mini > div {
+    transition: none;
+  }
+}
+
+/* Открыта панель строительства или команды — журнал прячется, чтобы не налезать на неё. */
+#log {
+  transition: opacity 0.2s;
+}
+body:has(#build:not(.hidden)) #log,
+body:has(#crew:not(.hidden)) #log {
+  opacity: 0;
+}
+/* До входа в игру нижняя панель (чат, кнопки) не нужна. */
+body:has(#login:not(.hidden)) #bottom {
+  display: none;
+}

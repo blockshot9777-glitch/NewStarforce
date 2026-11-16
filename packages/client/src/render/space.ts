@@ -197,6 +197,13 @@ export interface SpaceRenderResult {
   interior: { ox: number; oy: number; ts: number } | null;
 }
 
+/** Фон экрана входа: туманность и звёзды медленно дрейфуют (до подключения снимка мира ещё нет). */
+export function drawBackdrop(ctx: CanvasRenderingContext2D, W: number, H: number, t: number): void {
+  store.cam.x = t * 14;
+  store.cam.y = t * 5;
+  drawBackground(ctx, W, H, 0);
+}
+
 export function drawSpace(ctx: CanvasRenderingContext2D, W: number, H: number, t: number): SpaceRenderResult {
   const snap = store.snap!;
   const own = snap.ship;

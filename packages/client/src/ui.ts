@@ -310,7 +310,7 @@ export function renderUi(force = false): void {
 
 function meter(label: string, value: number, max: number, color: string, text?: string): string {
   const frac = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
-  return `<div class="meter" title="${esc(label)}"><span class="meter-label">${esc(label)}</span><div class="meter-bar"><div style="width:${(frac * 100).toFixed(0)}%;background:${color}"></div></div><span class="meter-val">${esc(text ?? `${fmt(value)}/${fmt(max)}`)}</span></div>`;
+  return `<div class="meter" title="${esc(label)}"><span class="meter-label">${esc(label)}</span><div class="meter-bar"><div style="width:${(frac * 100).toFixed(0)}%;background-color:${color};--c:${color}"></div></div><span class="meter-val">${esc(text ?? `${fmt(value)}/${fmt(max)}`)}</span></div>`;
 }
 
 function renderTop(own: OwnShipView | null, systemId: number, population: number[]): void {
@@ -417,7 +417,7 @@ function renderBuild(own: OwnShipView | null): void {
 }
 
 function bar(v: number, color: string): string {
-  return `<div class="mini"><div style="width:${Math.max(0, Math.min(100, v)).toFixed(0)}%;background:${color}"></div></div>`;
+  return `<div class="mini"><div style="width:${Math.max(0, Math.min(100, v)).toFixed(0)}%;background-color:${color};--c:${color}"></div></div>`;
 }
 
 function renderCrew(own: OwnShipView | null): void {

@@ -4,7 +4,7 @@ import { connect, savedName, send } from './net';
 import { kenneyEnabled, loadKenney } from './render/kenney';
 import { loadSprites } from './render/modules';
 import { loadPainted } from './render/painted';
-import { drawMinimap, drawSpace, type SpaceRenderResult } from './render/space';
+import { drawBackdrop, drawMinimap, drawSpace, type SpaceRenderResult } from './render/space';
 import { drawPlanetSurface, terrainImage, type PlanetLayout } from './render/planet';
 import { runGallery } from './render/gallery';
 import { PostFx } from './render/post';
@@ -364,8 +364,7 @@ function frame(now: number): void {
 function drawFrame(now: number): void {
   const snap = store.snap;
   if (!snap) {
-    ctx.fillStyle = '#04060c';
-    ctx.fillRect(0, 0, W, H);
+    drawBackdrop(ctx, W, H, now / 1000);
     return;
   }
   store.zoom += (store.zoomTarget - store.zoom) * 0.18;
