@@ -238,8 +238,13 @@ export function generateHull(inp: HullInput): HullSprite {
       const band = Math.min(Math.abs(ty - (minY - pad + 0.45)), Math.abs(ty - (maxY + pad - 0.45)));
       const chevron = tx > maxX + 0.5 && Math.abs(Math.abs(ty - midY) - (maxX + bow - tx) * 0.33) < 0.18;
       if (body[i] && ((band < 0.16 && tx > minX - 0.5 && tx < maxX + 1) || chevron)) col = mix(col, stripe, 0.92);
+      // Износ: продольные подтёки грязи вдоль корпуса (обтекание при полёте) и копоть за двигателями.
+      const grime = fbm(tx * 0.22, ty * 2.2, inp.seed + 21, 3);
+      if (grime > 0.56) k *= 1 - Math.min(1, (grime - 0.56) * 5) * 0.16;
+      const soot = Math.max(0, 1 - (tx - (minX - 1)) / (fw * 0.35));
+      if (soot > 0) k *= 1 - soot * soot * 0.35 * (0.7 + fbm(tx * 1.5, ty * 1.5, inp.seed + 23, 2) * 0.6);
       // Общий свет по кораблю: сверху-слева светлее, снизу-справа темнее.
-      k *= 1.1 - 0.22 * ((x / CW) * 0.5 + (y / CH) * 0.5);
+      k *= 1.02 - 0.24 * ((x / CW) * 0.5 + (y / CH) * 0.5);
       color[i] = [col[0] * k, col[1] * k, col[2] * k];
       height[i] = hgt;
       if (!gloss[i]) gloss[i] = 0.35;

@@ -653,6 +653,21 @@ function drawAirLabels(
 
 let lightCanvas: HTMLCanvasElement | null = null;
 
+/** Цвет света модулей (только визуал): тёплые лампы, голубой мостик, оранжевый реактор, зелёная фитолампа (палитра ART_STYLE.md). */
+const LIGHT_COLOR: Partial<Record<ModuleType, [number, number, number]>> = {
+  lamp: [255, 222, 170],
+  bridge: [120, 196, 255],
+  reactor: [255, 160, 50],
+  hydroponics: [105, 240, 174],
+  medbay: [150, 255, 205],
+};
+
+/**
+ * Освещение интерьера — карта света: тёмный холодный фон, цветные пятна от источников, свет не проходит
+ * сквозь стены (каждое пятно обрезано своей комнатой и её стенами). Карта умножается на кадр, затем
+ * часть света добавляется сверху — светлые пятна «горят» и подхватываются свечением постобработки.
+ * Пожары дают мерцающий оранжевый свет, разгерметизированная комната — красный тревожный.
+ */
 function drawLighting(ctx: CanvasRenderingContext2D, ship: OwnShipView, l: ParsedLayout, ox: number, oy: number, ts: number): void {
   const w = Math.ceil(l.w * ts);
   const h = Math.ceil(l.h * ts);
@@ -662,30 +677,104 @@ function drawLighting(ctx: CanvasRenderingContext2D, ship: OwnShipView, l: Parse
     lightCanvas.width = w;
     lightCanvas.height = h;
   }
+  const t = performance.now() / 1000;
   const lc = lightCanvas.getContext('2d')!;
   lc.globalCompositeOperation = 'source-over';
   lc.clearRect(0, 0, w, h);
-  lc.fillStyle = 'rgba(2,4,12,0.55)';
+  // Фон: пол в полутьме, стены чуть светлее (их видно и без ламп).
   l.grid.tiles.forEach((tile, i) => {
-    if (tile === 'floor' || tile === 'door') lc.fillRect((i % l.w) * ts, Math.floor(i / l.w) * ts, ts + 0.5, ts + 0.5);
+    if (tile === 'empty') return;
+    lc.fillStyle = tile === 'wall' ? 'rgb(132,138,156)' : 'rgb(92,98,122)';
+    lc.fillRect((i % l.w) * ts, Math.floor(i / l.w) * ts, ts + 0.5, ts + 0.5);
   });
-  lc.globalCompositeOperation = 'destination-out';
+
+  // Область комнаты для обрезки света: её клетки плюс соседние стены и двери (освещается их внутренняя грань).
+  const roomPath = new Map<number, Path2D>();
+  const pathOf = (room: number): Path2D => {
+    let p = roomPath.get(room);
+    if (p) return p;
+    p = new Path2D();
+    const seen = new Set<number>();
+    for (const tIdx of l.rooms.rooms[room].tiles) {
+      const x = tIdx % l.w;
+      const y = Math.floor(tIdx / l.w);
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= l.w || ny >= l.h) continue;
+          const ni = ny * l.w + nx;
+          if (seen.has(ni) || l.grid.tiles[ni] === 'empty') continue;
+          if (ni !== tIdx && l.rooms.roomOf[ni] !== -1) continue;
+          seen.add(ni);
+          p.rect(nx * ts, ny * ts, ts + 0.5, ts + 0.5);
+        }
+    }
+    roomPath.set(room, p);
+    return p;
+  };
+  type Light = { x: number; y: number; r: number; c: [number, number, number]; k: number; room: number };
+  const lights: Light[] = [];
+  const roomAt = (x: number, y: number) => {
+    const xi = Math.max(0, Math.min(l.w - 1, Math.floor(x)));
+    const yi = Math.max(0, Math.min(l.h - 1, Math.floor(y)));
+    return l.rooms.roomOf[yi * l.w + xi];
+  };
   for (const m of ship.modules) {
     const light = MODULES[m.type].light;
     if (!light || !m.powered || !m.enabled || m.hp <= 0) continue;
-    const cx = (m.x + 0.5) * ts;
-    const cy = (m.y + 0.5) * ts;
-    const r = light * ts;
-    const g = lc.createRadialGradient(cx, cy, 0, cx, cy, r);
-    g.addColorStop(0, 'rgba(0,0,0,1)');
-    g.addColorStop(0.6, 'rgba(0,0,0,0.75)');
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    lc.fillStyle = g;
-    lc.beginPath();
-    lc.arc(cx, cy, r, 0, Math.PI * 2);
-    lc.fill();
+    const [sw, sh] = moduleSize(m.type);
+    const cx = m.x + sw / 2;
+    const cy = m.y + sh / 2;
+    lights.push({ x: cx, y: cy, r: light * 1.15, c: LIGHT_COLOR[m.type] ?? [255, 236, 210], k: 1, room: roomAt(m.x, m.y) });
   }
+  ship.fires.forEach(([tile, v], i) => {
+    const flick = 0.75 + 0.25 * Math.sin(t * 23 + i * 1.7) * Math.sin(t * 7.3 + i);
+    lights.push({ x: (tile % l.w) + 0.5, y: Math.floor(tile / l.w) + 0.5, r: 1.8 + v * 1.5, c: [255, 130, 40], k: flick, room: roomAt(tile % l.w, tile / l.w) });
+  });
+
+  const paint = (g: CanvasRenderingContext2D, li: Light, alpha: number) => {
+    const cx = li.x * ts;
+    const cy = li.y * ts;
+    const r = li.r * ts;
+    const [cr, cg, cb] = li.c;
+    const gr = g.createRadialGradient(cx, cy, 0, cx, cy, r);
+    const a = alpha * li.k;
+    gr.addColorStop(0, `rgba(${cr},${cg},${cb},${a})`);
+    gr.addColorStop(0.35, `rgba(${cr},${cg},${cb},${a * 0.6})`);
+    gr.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+    g.fillStyle = gr;
+    g.fillRect(cx - r, cy - r, r * 2, r * 2);
+  };
+
+  lc.globalCompositeOperation = 'lighter';
+  for (const li of lights) {
+    lc.save();
+    if (li.room >= 0) lc.clip(pathOf(li.room));
+    paint(lc, li, 1);
+    lc.restore();
+  }
+  // Разгерметизация: комната мигает красным аварийным светом.
+  const pulse = 0.5 + 0.5 * Math.sin(t * 5);
+  l.rooms.rooms.forEach((room, ri) => {
+    if (!room.vented || !room.tiles.length) return;
+    lc.fillStyle = `rgba(255,30,20,${0.25 + 0.35 * pulse})`;
+    lc.fill(pathOf(ri));
+  });
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
   ctx.drawImage(lightCanvas, ox, oy);
+  // Пересвет в центре пятен — пол «блестит» от ламп.
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.translate(ox, oy);
+  for (const li of lights) {
+    ctx.save();
+    if (li.room >= 0) ctx.clip(pathOf(li.room));
+    paint(ctx, { ...li, r: li.r * 0.7 }, 0.16);
+    ctx.restore();
+  }
+  ctx.restore();
 }
 
 const SUITS = ['#1a3a5c', '#3e4a32', '#5c4033', '#37474f', '#4a2c2a'];

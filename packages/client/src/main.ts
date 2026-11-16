@@ -7,6 +7,7 @@ import { loadPainted } from './render/painted';
 import { drawMinimap, drawSpace, type SpaceRenderResult } from './render/space';
 import { drawPlanetSurface, terrainImage, type PlanetLayout } from './render/planet';
 import { runGallery } from './render/gallery';
+import { PostFx } from './render/post';
 import { interp, screenToWorld, store, toast, worldToTile } from './store';
 import { initUi, kindName, renderUi, setMode } from './ui';
 
@@ -328,8 +329,39 @@ function onKey(e: KeyboardEvent): void {
 
 // ---------- Цикл ----------
 
+let post: PostFx | null = null;
+/** Сглаженная длительность кадра (мс) и с какого момента постобработка работает — для автоотключения. */
+let frameMs = 16;
+let lastFrameAt = 0;
+let postSince = 0;
+
 function frame(now: number): void {
   requestAnimationFrame(frame);
+  if (lastFrameAt) frameMs += (Math.min(200, now - lastFrameAt) - frameMs) * 0.05;
+  lastFrameAt = now;
+  if (post && !postSince) postSince = now;
+  // Слабая машина: если с постобработкой стабильно меньше ~35 кадров/с — выключаем её, игра важнее.
+  if (post && now - postSince > 3000 && frameMs > 28 && new URLSearchParams(location.search).get('post') !== '1') {
+    console.warn(`postfx off: ${frameMs.toFixed(0)} ms/frame`);
+    document.getElementById('game-post')?.remove();
+    post = null;
+  }
+  drawFrame(now);
+  // Постобработка (свечение, цвет, виньетка) — поверх готового 2D-кадра.
+  if (post) {
+    try {
+      post.bloom = store.mode === 'planet' ? 0.7 : 1;
+      post.present(canvas, now / 1000);
+    } catch (e) {
+      // Потеря контекста WebGL и т. п. — показываем обычный 2D-кадр.
+      console.warn('postfx off', e);
+      document.getElementById('game-post')?.remove();
+      post = null;
+    }
+  }
+}
+
+function drawFrame(now: number): void {
   const snap = store.snap;
   if (!snap) {
     ctx.fillStyle = '#04060c';
@@ -413,5 +445,6 @@ loadSprites();
 if (kenneyEnabled()) loadKenney();
 initUi();
 start();
+post = PostFx.create(canvas);
 requestAnimationFrame(frame);
 }
