@@ -5,7 +5,7 @@ import { kenneyEnabled, loadKenney } from './render/kenney';
 import { loadSprites } from './render/modules';
 import { loadPainted } from './render/painted';
 import { drawMinimap, drawSpace, type SpaceRenderResult } from './render/space';
-import { drawPlanetSurface, type PlanetLayout } from './render/planet';
+import { drawPlanetSurface, terrainImage, type PlanetLayout } from './render/planet';
 import { runGallery } from './render/gallery';
 import { interp, screenToWorld, store, toast, worldToTile } from './store';
 import { initUi, kindName, renderUi, setMode } from './ui';
@@ -359,6 +359,11 @@ function frame(now: number): void {
     planetView = drawPlanetSurface(ctx, W, H, landing, terrain, now / 1000);
     renderUi();
     return;
+  }
+  // Рельеф высадок считается заранее в фоне — к нажатию «На поверхность» карта уже готова.
+  for (const e of snap.expeditions) {
+    const tr = store.terrains.get(e.id);
+    if (tr) terrainImage(e, tr);
   }
   last = drawSpace(ctx, W, H, now / 1000);
   drawToolPreview();

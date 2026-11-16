@@ -26,7 +26,7 @@ function starterLayout() {
 
 export function runGallery(canvas: HTMLCanvasElement): void {
   const W = window.innerWidth;
-  const H = Math.max(window.innerHeight, 1700);
+  const H = Math.max(window.innerHeight, 2100);
   canvas.width = W;
   canvas.height = H;
   canvas.style.width = `${W}px`;
@@ -41,6 +41,18 @@ export function runGallery(canvas: HTMLCanvasElement): void {
     ctx.font = '14px system-ui';
     ctx.fillText(t, x, y);
   };
+
+  // ?gallery=1&biome=volcanic — один рельеф в масштабе игры (клетка ≈ 36 px), для проверки деталей.
+  const only = new URLSearchParams(location.search).get('biome');
+  if (only && (BIOME_TYPES as readonly string[]).includes(only)) {
+    const b = only as (typeof BIOME_TYPES)[number];
+    const surf = generateSurface(new Rng(7), b, (() => { let id = 1; return () => id++; })());
+    const t0 = performance.now();
+    const img = renderTerrain(surf.terrain, surf.w, surf.h, b, 7);
+    console.log(`timing: terrain ${b} ${(performance.now() - t0).toFixed(0)} ms`);
+    ctx.drawImage(img, 0, 0, img.width * 1.5, img.height * 1.5);
+    return;
+  }
 
   const L = starterLayout();
   // Замер: корпус самого большого корпуса (крейсер 32×17, заполненный) — он перегенерируется при каждой стройке.
@@ -96,11 +108,14 @@ export function runGallery(canvas: HTMLCanvasElement): void {
   BIOME_TYPES.forEach((b, i) => {
     const surf = generateSurface(new Rng(40 + i), b, (() => { let id = 1; return () => id++; })());
     const img = renderTerrain(surf.terrain, surf.w, surf.h, b, 40 + i);
-    ctx.drawImage(img, 20 + i * 190, y + 10, 176, 120);
+    // Крупно, по 4 в ряд — чтобы видеть берега, рябь и корку лавы.
+    const cx = 20 + (i % 4) * 340;
+    const cy = y + 10 + Math.floor(i / 4) * 255;
+    ctx.drawImage(img, cx, cy, 330, 225);
     ctx.fillStyle = '#b0bec5';
-    ctx.fillText(b, 20 + i * 190, y + 145);
+    ctx.fillText(b, cx, cy + 242);
   });
-  y += 160;
+  y += 10 + Math.ceil(BIOME_TYPES.length / 4) * 255 + 10;
   title('Залежи на поверхности: металл, лёд, кристаллы, еда, биомасса, вода, тайник Машин', 20, y);
   ['metal', 'ice', 'crystals', 'food', 'biomass', 'water', 'credits'].forEach((r, i) => ctx.drawImage(depositSprite(r, i), 20 + i * 150, y + 10, 130, 130));
 }

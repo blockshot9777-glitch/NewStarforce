@@ -32,16 +32,42 @@ export interface PlanetLayout {
 }
 
 
-const terrainCanvas = new Map<number, HTMLCanvasElement>();
+const terrainCanvas = new Map<number, CanvasImageSource>();
+const terrainPending = new Set<number>();
+let terrainWorker: Worker | null | undefined;
 
-/** Рельеф рисуется один раз в отдельный холст и потом только масштабируется. */
-function terrainImage(e: ExpeditionView, terrain: string): HTMLCanvasElement {
-  let c = terrainCanvas.get(e.id);
-  if (!c) {
-    c = renderTerrain(terrain, e.surface.w, e.surface.h, e.biome, e.id);
-    terrainCanvas.set(e.id, c);
+function getTerrainWorker(): Worker | null {
+  if (terrainWorker !== undefined) return terrainWorker;
+  try {
+    terrainWorker = typeof OffscreenCanvas !== 'undefined' ? new Worker(new URL('./terrainWorker.ts', import.meta.url), { type: 'module' }) : null;
+    terrainWorker?.addEventListener('message', (m: MessageEvent<{ id: number; bitmap: ImageBitmap }>) => {
+      terrainPending.delete(m.data.id);
+      terrainCanvas.set(m.data.id, m.data.bitmap);
+    });
+  } catch {
+    terrainWorker = null;
   }
-  return c;
+  return terrainWorker;
+}
+
+/**
+ * Рельеф рисуется один раз и потом только масштабируется. Считается в фоновом потоке
+ * (если браузер умеет OffscreenCanvas), пока считается — null, и рисуется ровный грунт.
+ */
+export function terrainImage(e: Pick<ExpeditionView, 'id' | 'biome' | 'surface'>, terrain: string): CanvasImageSource | null {
+  const c = terrainCanvas.get(e.id);
+  if (c) return c;
+  const w = getTerrainWorker();
+  if (!w) {
+    const img = renderTerrain(terrain, e.surface.w, e.surface.h, e.biome, e.id);
+    terrainCanvas.set(e.id, img);
+    return img;
+  }
+  if (!terrainPending.has(e.id)) {
+    terrainPending.add(e.id);
+    w.postMessage({ id: e.id, terrain, w: e.surface.w, h: e.surface.h, biome: e.biome, seed: e.id });
+  }
+  return null;
 }
 
 export function forgetTerrain(id: number): void {
@@ -82,7 +108,12 @@ export function drawPlanetSurface(ctx: CanvasRenderingContext2D, W: number, H: n
   ctx.fillStyle = '#05070b';
   ctx.fillRect(0, 0, W, H);
   ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(terrainImage(e, terrain), ox, oy, s.w * ts, s.h * ts);
+  const img = terrainImage(e, terrain);
+  if (img) ctx.drawImage(img, ox, oy, s.w * ts, s.h * ts);
+  else {
+    ctx.fillStyle = def.ground;
+    ctx.fillRect(ox, oy, s.w * ts, s.h * ts);
+  }
 
   // Лава и кислота светятся поверх текстуры.
   if (e.biome === 'volcanic' || e.biome === 'toxic') {
