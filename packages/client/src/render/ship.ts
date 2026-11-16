@@ -245,6 +245,52 @@ export interface HullDrawOpts {
   sunAngle?: number;
 }
 
+let bubble: HTMLCanvasElement | null = null;
+
+/** Спрайт щита (рисуется один раз): прозрачный центр, свечение к краю, соты у кромки. */
+function shieldBubble(): HTMLCanvasElement {
+  if (bubble) return bubble;
+  const S = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  const R = S / 2;
+  const fres = g.createRadialGradient(R, R, R * 0.55, R, R, R);
+  fres.addColorStop(0, 'rgba(40,150,255,0)');
+  fres.addColorStop(0.8, 'rgba(40,150,255,0)');
+  fres.addColorStop(0.95, 'rgba(70,190,255,0.16)');
+  fres.addColorStop(0.988, 'rgba(160,230,255,0.42)');
+  fres.addColorStop(1, 'rgba(160,230,255,0)');
+  g.fillStyle = fres;
+  g.fillRect(0, 0, S, S);
+  // Соты: шестиугольники, видимые только ближе к кромке.
+  const hex = 7;
+  const hh = hex * Math.sqrt(3);
+  g.lineWidth = 0.8;
+  for (let row = -1; row * hh * 0.5 < S + hh; row++) {
+    for (let col = -1; col * hex * 1.5 < S + hex * 2; col++) {
+      const x = col * hex * 1.5;
+      const y = row * hh + (col & 1 ? hh / 2 : 0);
+      const d = Math.hypot(x - R, y - R) / R;
+      if (d > 0.985 || d < 0.78) continue;
+      const alpha = Math.pow((d - 0.78) / 0.2, 2) * 0.2;
+      g.strokeStyle = `rgba(120,215,255,${alpha})`;
+      g.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const an = (k / 6) * Math.PI * 2;
+        const px = x + Math.cos(an) * hex * 0.92;
+        const py = y + Math.sin(an) * hex * 0.92;
+        if (k) g.lineTo(px, py);
+        else g.moveTo(px, py);
+      }
+      g.closePath();
+      g.stroke();
+    }
+  }
+  bubble = c;
+  return c;
+}
+
 /** Внешняя обшивка корабля: сгенерированный спрайт + факелы, огни и щит, которые меняются каждый кадр. */
 export function drawHull(ctx: CanvasRenderingContext2D, l: ParsedLayout, o: HullDrawOpts, t: number): void {
   const sprite = hullFor(`${o.id}:${o.variant}:${o.own}`, String(l.version), {
@@ -316,7 +362,8 @@ export function drawHull(ctx: CanvasRenderingContext2D, l: ParsedLayout, o: Hull
   });
   ctx.restore();
 
-  // Щит: тонкая мерцающая оболочка, а не заливка поверх корабля.
+  // Щит: энергетический пузырь — прозрачный в центре, светящийся к краю (эффект Френеля), с тонкой
+  // сотовой решёткой у кромки и бегущим по кромке бликом. Сила свечения — от заряда щита.
   if (o.shieldFrac > 0.02) {
     const w = sprite.canvas.width * k;
     const h = sprite.canvas.height * k;
@@ -324,23 +371,22 @@ export function drawHull(ctx: CanvasRenderingContext2D, l: ParsedLayout, o: Hull
     const cy = Y(-sprite.offY) + h / 2;
     const rx = w * 0.56;
     const ry = h * 0.62;
-    const a = 0.1 + 0.25 * o.shieldFrac;
-    const rim = ctx.createRadialGradient(cx, cy, Math.min(rx, ry) * 0.85, cx, cy, Math.max(rx, ry));
-    rim.addColorStop(0, 'rgba(64,196,255,0)');
-    rim.addColorStop(0.8, `rgba(64,196,255,${a * 0.35})`);
-    rim.addColorStop(1, 'rgba(64,196,255,0)');
-    ctx.fillStyle = rim;
+    const a = (0.3 + 0.5 * o.shieldFrac) * (0.9 + 0.1 * Math.sin(t * 3.1 + o.id));
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = a;
+    ctx.drawImage(shieldBubble(), cx - rx, cy - ry, rx * 2, ry * 2);
+    // Блик бежит по кромке.
+    ctx.translate(cx, cy);
+    ctx.scale(rx, ry);
+    const sweep = t * 0.7 + o.id;
+    ctx.globalAlpha = 0.5 * a;
+    ctx.strokeStyle = 'rgba(170,235,255,1)';
+    ctx.lineWidth = Math.max(1, ts * 0.08) / Math.max(rx, ry);
     ctx.beginPath();
-    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = `rgba(128,222,255,${a})`;
-    ctx.lineWidth = Math.max(1, ts * 0.06);
-    ctx.setLineDash([ts * 0.9, ts * 0.5]);
-    ctx.lineDashOffset = -t * ts * 2;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.arc(0, 0, 0.985, sweep, sweep + 0.9);
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.restore();
   }
   ctx.restore();
 }
