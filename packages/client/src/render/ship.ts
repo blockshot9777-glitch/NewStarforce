@@ -245,6 +245,27 @@ export interface HullDrawOpts {
   sunAngle?: number;
 }
 
+let shadowSprite: HTMLCanvasElement | null = null;
+
+/** Мягкая эллиптическая тень (заготовленный спрайт — дешевле, чем shadowBlur каждый кадр). */
+function softShadow(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, alpha: number): void {
+  if (!shadowSprite) {
+    shadowSprite = document.createElement('canvas');
+    shadowSprite.width = shadowSprite.height = 64;
+    const g = shadowSprite.getContext('2d')!;
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(0,0,0,0.9)');
+    gr.addColorStop(0.55, 'rgba(0,0,0,0.5)');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 64);
+  }
+  const a = ctx.globalAlpha;
+  ctx.globalAlpha = a * alpha;
+  ctx.drawImage(shadowSprite, cx - rx, cy - ry, rx * 2, ry * 2);
+  ctx.globalAlpha = a;
+}
+
 let bubble: HTMLCanvasElement | null = null;
 
 /** Спрайт щита (рисуется один раз): прозрачный центр, свечение к краю, соты у кромки. */
@@ -523,7 +544,12 @@ export function drawInterior(ctx: CanvasRenderingContext2D, ship: OwnShipView, l
     paintDoor(ctx, p.x, p.y, ts, open, vertical);
   });
 
-  // Модули.
+  // Модули — на мягкой контактной тени: «стоят» на полу, а не наклеены.
+  for (const m of ship.modules) {
+    const p = at(m.x, m.y);
+    const [mw, mh] = moduleSize(m.type);
+    softShadow(ctx, p.x + (mw * ts) / 2 + ts * 0.07, p.y + (mh * ts) / 2 + ts * 0.1, mw * ts * 0.62, mh * ts * 0.6, 0.55);
+  }
   for (const m of ship.modules) {
     const p = at(m.x, m.y);
     drawModule(ctx, m.type, p.x, p.y, ts, { powered: m.powered || !!MODULES[m.type].output, active: m.active, growth: m.growth, hpFrac: m.hp / MODULES[m.type].maxHp, enabled: m.enabled }, t);
@@ -812,6 +838,29 @@ function drawLighting(ctx: CanvasRenderingContext2D, ship: OwnShipView, l: Parse
     lc.fill(pathOf(ri));
   });
 
+  // Затенение у стен (ambient occlusion): пол темнеет к переборкам и сильнее — в углах.
+  lc.globalCompositeOperation = 'source-over';
+  const ao = ts * 0.42;
+  const isSolid = (x: number, y: number) => x < 0 || y < 0 || x >= l.w || y >= l.h || l.grid.tiles[y * l.w + x] === 'wall';
+  l.grid.tiles.forEach((tile, i) => {
+    if (tile !== 'floor' && tile !== 'door') return;
+    const x = i % l.w;
+    const y = Math.floor(i / l.w);
+    const px = x * ts;
+    const py = y * ts;
+    const edge = (x0: number, y0: number, x1: number, y1: number, rx: number, ry: number, rw: number, rh: number) => {
+      const gr = lc.createLinearGradient(x0, y0, x1, y1);
+      gr.addColorStop(0, 'rgba(0,0,0,0.5)');
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
+      lc.fillStyle = gr;
+      lc.fillRect(rx, ry, rw, rh);
+    };
+    if (isSolid(x, y - 1)) edge(px, py, px, py + ao, px, py, ts, ao);
+    if (isSolid(x, y + 1)) edge(px, py + ts, px, py + ts - ao, px, py + ts - ao, ts, ao);
+    if (isSolid(x - 1, y)) edge(px, py, px + ao, py, px, py, ao, ts);
+    if (isSolid(x + 1, y)) edge(px + ts, py, px + ts - ao, py, px + ts - ao, py, ao, ts);
+  });
+
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
   ctx.drawImage(lightCanvas, ox, oy);
@@ -860,10 +909,7 @@ function drawCrew(
     ctx.arc(x, y, bodyHalf + ts * 0.08, 0, Math.PI * 2);
     ctx.stroke();
   }
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.beginPath();
-  ctx.ellipse(x, y + bodyHalf * 0.92, ts * 0.28, ts * 0.08, 0, 0, Math.PI * 2);
-  ctx.fill();
+  softShadow(ctx, x + ts * 0.04, y + bodyHalf * 0.9, ts * 0.36, ts * 0.13, 0.6);
   const dressed = drawPawn(ctx, c.id, c.robot, x, y, pawn) || drawPaintedPawn(ctx, c.id, c.robot, x, y, pawn);
   if (!dressed && c.robot) {
     ctx.fillStyle = '#90a4ae';
