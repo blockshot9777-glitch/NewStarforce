@@ -29,8 +29,8 @@ with no gradient, no shadow, no floor. No text, no pixel art, no cartoon.*
 | `sprites/planet/magma_beetle.png` | Top-down game sprite of a magma beetle: a heavy black basalt-shelled beetle with glowing orange cracks between its armor plates. |
 | `sprites/planet/beast.png` | Top-down game sprite of a local four-legged alien grazer beast, brown-grey hide, small horns, seen from directly above. |
 
-## Следующими (движок пока рисует их кодом, крючков загрузки ещё нет)
+## Что уже нарисовано кодом (процедурно)
 
-- Корпуса кораблей вокруг интерьера (скаут, фрегат, крейсер) — как «Буран» на скринах 2017 года.
-- Враги в космосе: дрон-охотник, Страж Машин, Спорокаст.
-- Станция, астероиды, контейнеры с грузом.
+Корпус корабля (из планировки), астероиды, планеты, станция, враги в космосе, контейнеры, шаттл и местная
+жизнь, рельеф планет, эффекты боя — `packages/client/src/render/gen/`, частицы — `render/particles.ts`.
+Посмотреть всё крупно: игра с `?gallery=1`. Рисованный PNG (по таблице выше) всегда важнее процедурного.

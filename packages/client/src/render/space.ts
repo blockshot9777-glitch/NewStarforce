@@ -13,6 +13,7 @@ import {
 import { interp, store, worldToScreen } from '../store';
 import { NEBULA_SIZE, nebulaBlobs, tileOffset, wrappedCenters } from './nebula';
 import { drawHull, drawInterior, moduleWorld } from './ship';
+import { drawParticles, explosion, impact, trail } from './particles';
 import { asteroidSprite, crateSprite, drawPlanetBody, npcSprite, stationSprite } from './gen/space';
 
 interface Star {
@@ -238,20 +239,38 @@ export function drawSpace(ctx: CanvasRenderingContext2D, W: number, H: number, t
     const pos = interp(c.id, c.x, c.y);
     const p = S(pos.x, pos.y);
     if (c.kind === 'missile') {
-      ctx.strokeStyle = 'rgba(255,171,64,0.6)';
-      ctx.lineWidth = 2;
+      trail(pos.x, pos.y, c.vx, c.vy, [150, 140, 130]);
+      // Ракета: корпус по курсу и раскалённое сопло.
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(Math.atan2(c.vy, c.vx));
+      const L = Math.max(5, 7 * z);
+      ctx.fillStyle = '#c9ced4';
       ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x - c.vx * 0.08 * z, p.y - c.vy * 0.08 * z);
-      ctx.stroke();
-      ctx.fillStyle = '#ffe0b2';
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, Math.max(2, 3 * z), 0, Math.PI * 2);
+      ctx.moveTo(L, 0);
+      ctx.lineTo(-L * 0.6, -L * 0.25);
+      ctx.lineTo(-L * 0.6, L * 0.25);
+      ctx.closePath();
       ctx.fill();
-    } else {
-      ctx.fillStyle = `rgba(174,234,0,${0.6 + 0.3 * Math.sin(t * 10)})`;
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(-L * 0.7, 0, 0, -L * 0.7, 0, L);
+      g.addColorStop(0, 'rgba(255,220,150,0.95)');
+      g.addColorStop(1, 'rgba(255,90,20,0)');
+      ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, Math.max(3, 5 * z), 0, Math.PI * 2);
+      ctx.arc(-L * 0.7, 0, L, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } else {
+      trail(pos.x, pos.y, c.vx, c.vy, [120, 160, 30]);
+      const r = Math.max(3, 5 * z);
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 1.8);
+      g.addColorStop(0, `rgba(230,255,120,${0.8 + 0.2 * Math.sin(t * 10)})`);
+      g.addColorStop(0.5, 'rgba(140,200,30,0.6)');
+      g.addColorStop(1, 'rgba(60,100,10,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r * 1.8, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -439,40 +458,51 @@ function drawNpc(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'npc' }
 function drawFx(ctx: CanvasRenderingContext2D, S: ToScreen, z: number): void {
   const now = performance.now();
   store.fx = store.fx.filter((f) => now - f.born < 600);
-  for (const { fx, born } of store.fx) {
-    const age = (now - born) / 600;
-    if (fx.k === 'laser') {
-      if (age > 0.4) continue;
-      const a = S(fx.x1, fx.y1);
-      const b = S(fx.x2, fx.y2);
-      ctx.strokeStyle = fx.hostile ? `rgba(255,23,68,${1 - age * 2.5})` : `rgba(64,196,255,${1 - age * 2.5})`;
-      ctx.lineWidth = 3;
+  for (const f of store.fx) {
+    // Новые взрывы и попадания порождают частицы один раз.
+    if (!f.spawned) {
+      f.spawned = true;
+      if (f.fx.k === 'boom') explosion(f.fx.x, f.fx.y, f.fx.r);
+      else if (f.fx.k === 'hit') impact(f.fx.x, f.fx.y, f.fx.shield);
+    }
+    const { fx } = f;
+    const age = (now - f.born) / 600;
+    if (fx.k !== 'laser' || age > 0.4) continue;
+    const a = S(fx.x1, fx.y1);
+    const b = S(fx.x2, fx.y2);
+    const fade = 1 - age * 2.5;
+    const col = fx.hostile ? '255,40,70' : '64,196,255';
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    // Ореол, луч и раскалённая сердцевина.
+    for (const [w, al] of [
+      [9, 0.12],
+      [4, 0.45],
+    ] as const) {
+      ctx.strokeStyle = `rgba(${col},${al * fade})`;
+      ctx.lineWidth = w;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
       ctx.stroke();
-      ctx.strokeStyle = `rgba(255,255,255,${0.8 - age * 2})`;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    } else if (fx.k === 'hit') {
-      const p = S(fx.x, fx.y);
-      ctx.fillStyle = fx.shield ? `rgba(79,195,247,${1 - age})` : `rgba(255,171,64,${1 - age})`;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, (4 + age * 12) * Math.max(0.5, z), 0, Math.PI * 2);
-      ctx.fill();
-    } else if (fx.k === 'boom') {
-      const p = S(fx.x, fx.y);
-      const r = fx.r * z * (0.5 + age);
-      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, Math.max(2, r));
-      g.addColorStop(0, `rgba(255,245,200,${1 - age})`);
-      g.addColorStop(0.4, `rgba(255,120,30,${0.8 * (1 - age)})`);
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, Math.max(2, r), 0, Math.PI * 2);
-      ctx.fill();
     }
+    ctx.strokeStyle = `rgba(255,255,255,${0.9 * fade})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    const g = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, 10);
+    g.addColorStop(0, `rgba(${col},${0.8 * fade})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
+  drawParticles(ctx, S, z);
 }
 
 function beam(ctx: CanvasRenderingContext2D, a: { x: number; y: number }, b: { x: number; y: number }, color: string, t: number): void {

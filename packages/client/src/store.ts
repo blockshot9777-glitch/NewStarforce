@@ -28,7 +28,7 @@ export const store = {
   snapAt: 0,
   tickMs: 100,
   layouts: new Map<number, ParsedLayout>(),
-  fx: [] as { fx: Fx; born: number }[],
+  fx: [] as { fx: Fx; born: number; spawned?: boolean }[],
   log: [] as (LogEntry & { at: number })[],
   chat: [] as (ChatEntry & { at: number })[],
   toast: null as { text: string; at: number } | null,
