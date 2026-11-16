@@ -1,5 +1,6 @@
-// Частицы боя: искры, обломки, дым, ударные волны. Только визуал клиента — на игру не влияет.
-// Частицы живут в мировых координатах, поэтому корректно летят при движении камеры и масштабе.
+// Частицы боя: огненный шар, искры, раскалённые обломки, дым, ударная волна. Только визуал клиента —
+// на игру не влияет. Частицы живут в мировых координатах, поэтому корректно летят при движении камеры.
+// Мягкие клубы рисуются заранее заготовленными спрайтами-градиентами (дёшево даже при сотнях частиц).
 
 export interface Particle {
   x: number;
@@ -12,57 +13,107 @@ export interface Particle {
   size: number;
   grow: number;
   color: [number, number, number];
-  kind: 'spark' | 'smoke' | 'debris' | 'flash' | 'ring';
+  kind: 'spark' | 'smoke' | 'debris' | 'flash' | 'ring' | 'fire';
   drag: number;
   spin: number;
   angle: number;
+  /** Задержка появления, с — клубы огня и дыма вырастают не все сразу. */
+  delay: number;
 }
 
 const particles: Particle[] = [];
 const MAX = 1500;
 let last = performance.now();
 
-function add(p: Omit<Particle, 'max' | 'angle'> & { angle?: number }): void {
+function add(p: Omit<Particle, 'max' | 'angle' | 'delay'> & { angle?: number; delay?: number }): void {
   if (particles.length >= MAX) particles.shift();
-  particles.push({ ...p, max: p.life, angle: p.angle ?? Math.random() * Math.PI * 2 });
+  particles.push({ ...p, max: p.life, angle: p.angle ?? Math.random() * Math.PI * 2, delay: p.delay ?? 0 });
 }
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
-/** Взрыв радиуса r (мировые единицы): вспышка, ударная волна, искры, обломки, дым. */
+// ---------- Спрайты мягких клубов ----------
+
+const blobs = new Map<string, HTMLCanvasElement>();
+/** Круглый клуб с мягким краем заданного цвета (кэш по цвету, квантованному до 16 ступеней). */
+function blob(r: number, g: number, b: number, soft: number): HTMLCanvasElement {
+  const q = (v: number) => Math.round(v / 16) * 16;
+  const key = `${q(r)},${q(g)},${q(b)},${soft}`;
+  let c = blobs.get(key);
+  if (!c) {
+    c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const x = c.getContext('2d')!;
+    const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, `rgba(${q(r)},${q(g)},${q(b)},1)`);
+    gr.addColorStop(soft, `rgba(${q(r)},${q(g)},${q(b)},0.55)`);
+    gr.addColorStop(1, `rgba(${q(r)},${q(g)},${q(b)},0)`);
+    x.fillStyle = gr;
+    x.fillRect(0, 0, 64, 64);
+    blobs.set(key, c);
+  }
+  return c;
+}
+
+/** Цвет остывающего огня по доле прожитой жизни: бело-жёлтый → оранжевый → тёмно-красный. */
+function fireColor(age: number): [number, number, number] {
+  if (age < 0.15) return [255, 245, 210];
+  if (age < 0.4) {
+    const k = (age - 0.15) / 0.25;
+    return [255, 245 - 105 * k, 210 - 170 * k];
+  }
+  const k = Math.min(1, (age - 0.4) / 0.6);
+  return [255 - 135 * k, 140 - 100 * k, 40 - 20 * k];
+}
+
+// ---------- Эффекты ----------
+
+/** Взрыв радиуса r (мировые единицы): вспышка, огненный шар, ударная волна, искры, обломки, дым. */
 export function explosion(x: number, y: number, r: number): void {
-  add({ x, y, vx: 0, vy: 0, life: 0.25, size: r * 1.6, grow: 0, color: [255, 240, 200], kind: 'flash', drag: 0, spin: 0 });
-  add({ x, y, vx: 0, vy: 0, life: 0.6, size: r * 0.3, grow: r * 4, color: [255, 180, 110], kind: 'ring', drag: 0, spin: 0 });
-  const n = Math.min(60, 12 + r * 1.5);
+  add({ x, y, vx: 0, vy: 0, life: 0.14, size: r * 2.2, grow: r * 4, color: [255, 240, 210], kind: 'flash', drag: 0, spin: 0 });
+  add({ x, y, vx: 0, vy: 0, life: 0.45, size: r * 0.5, grow: r * 7, color: [255, 200, 150], kind: 'ring', drag: 0, spin: 0 });
+  // Огненный шар — клубы, разлетающиеся от центра и остывающие.
+  const fires = Math.min(18, 6 + Math.round(r * 0.5));
+  for (let i = 0; i < fires; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = rnd(r * 0.8, r * 2.6);
+    add({ x: x + Math.cos(a) * r * 0.2, y: y + Math.sin(a) * r * 0.2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rnd(0.4, 0.85), size: r * rnd(0.2, 0.42), grow: r * 0.7, color: [255, 220, 150], kind: 'fire', drag: 2.4, spin: 0, delay: rnd(0, 0.08) });
+  }
+  // Искры — длинные тонкие штрихи.
+  const n = Math.min(50, 10 + r * 1.2);
   for (let i = 0; i < n; i++) {
     const a = Math.random() * Math.PI * 2;
-    const sp = rnd(r * 1.5, r * 6);
-    add({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rnd(0.3, 0.9), size: rnd(0.8, 2.2), grow: 0, color: [255, rnd(150, 230), 80], kind: 'spark', drag: 1.8, spin: 0 });
+    const sp = rnd(r * 2, r * 7);
+    add({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rnd(0.25, 0.7), size: rnd(0.4, 0.9), grow: 0, color: [255, rnd(170, 230), 110], kind: 'spark', drag: 2.2, spin: 0 });
   }
-  for (let i = 0; i < n * 0.35; i++) {
+  // Обломки обшивки: тёмные, кувыркаются, раскалённый край остывает.
+  for (let i = 0; i < Math.min(14, 3 + r * 0.3); i++) {
     const a = Math.random() * Math.PI * 2;
-    const sp = rnd(r * 0.5, r * 2.5);
-    add({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rnd(1.2, 2.6), size: rnd(1.2, 3.2), grow: 0, color: [110, 105, 100], kind: 'debris', drag: 0.4, spin: rnd(-6, 6) });
+    const sp = rnd(r * 0.6, r * 2.8);
+    add({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rnd(1.4, 2.8), size: rnd(1.8, 3.6), grow: 0, color: [84, 82, 80], kind: 'debris', drag: 0.35, spin: rnd(-7, 7) });
   }
-  for (let i = 0; i < n * 0.4; i++) {
+  // Дым — появляется чуть позже огня и расползается.
+  for (let i = 0; i < Math.min(16, 5 + r * 0.45); i++) {
     const a = Math.random() * Math.PI * 2;
-    const sp = rnd(r * 0.2, r * 1.2);
-    add({ x: x + rnd(-r, r) * 0.3, y: y + rnd(-r, r) * 0.3, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rnd(1.2, 2.4), size: r * rnd(0.3, 0.6), grow: r * 0.8, color: [70, 64, 60], kind: 'smoke', drag: 1.2, spin: 0 });
+    const sp = rnd(r * 0.15, r * 0.9);
+    add({ x: x + rnd(-r, r) * 0.3, y: y + rnd(-r, r) * 0.3, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rnd(1.4, 2.6), size: r * rnd(0.4, 0.7), grow: r * 0.7, color: [52, 48, 46], kind: 'smoke', drag: 1.1, spin: 0, delay: rnd(0.12, 0.3) });
   }
 }
 
-/** Попадание: в щит — голубая рябь, в корпус — искры и клочок дыма. */
+/** Попадание: в щит — голубая рябь, в корпус — искры, вспышка и клочок дыма. */
 export function impact(x: number, y: number, shield: boolean): void {
   if (shield) {
     add({ x, y, vx: 0, vy: 0, life: 0.35, size: 2, grow: 40, color: [120, 220, 255], kind: 'ring', drag: 0, spin: 0 });
+    add({ x, y, vx: 0, vy: 0, life: 0.18, size: 6, grow: 10, color: [140, 220, 255], kind: 'flash', drag: 0, spin: 0 });
     return;
   }
+  add({ x, y, vx: 0, vy: 0, life: 0.1, size: 5, grow: 8, color: [255, 230, 180], kind: 'flash', drag: 0, spin: 0 });
   for (let i = 0; i < 10; i++) {
     const a = Math.random() * Math.PI * 2;
-    const sp = rnd(30, 120);
-    add({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rnd(0.15, 0.45), size: rnd(0.6, 1.4), grow: 0, color: [255, 200, 120], kind: 'spark', drag: 3, spin: 0 });
+    const sp = rnd(40, 140);
+    add({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rnd(0.15, 0.45), size: rnd(0.4, 0.8), grow: 0, color: [255, 200, 120], kind: 'spark', drag: 3, spin: 0 });
   }
-  add({ x, y, vx: rnd(-8, 8), vy: rnd(-8, 8), life: 0.9, size: 3, grow: 10, color: [80, 76, 72], kind: 'smoke', drag: 1, spin: 0 });
+  add({ x, y, vx: rnd(-8, 8), vy: rnd(-8, 8), life: 1.0, size: 3, grow: 9, color: [70, 66, 62], kind: 'smoke', drag: 1, spin: 0 });
 }
 
 /** Дымный след ракеты (вызывать каждый кадр для каждой ракеты). */
@@ -80,6 +131,10 @@ export function drawParticles(ctx: CanvasRenderingContext2D, toScreen: (x: numbe
   last = now;
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
+    if (p.delay > 0) {
+      p.delay -= dt;
+      continue;
+    }
     p.life -= dt;
     if (p.life <= 0) {
       particles.splice(i, 1);
@@ -94,56 +149,74 @@ export function drawParticles(ctx: CanvasRenderingContext2D, toScreen: (x: numbe
     p.angle += p.spin * dt;
   }
   ctx.save();
-  for (const pass of ['smoke', 'light'] as const) {
+  // Сначала дым и обломки (поглощают свет), затем огонь и искры поверх — сложением.
+  for (const pass of ['dark', 'light'] as const) {
     ctx.globalCompositeOperation = pass === 'light' ? 'lighter' : 'source-over';
     for (const p of particles) {
-      const isLight = p.kind === 'spark' || p.kind === 'flash' || p.kind === 'ring';
+      if (p.delay > 0) continue;
+      const isLight = p.kind === 'spark' || p.kind === 'flash' || p.kind === 'ring' || p.kind === 'fire';
       if ((pass === 'light') !== isLight) continue;
       const s = toScreen(p.x, p.y);
       const t = p.life / p.max;
+      const age = 1 - t;
       const size = Math.max(0.6, p.size * zoom);
       const [r, g, b] = p.color;
       switch (p.kind) {
-        case 'flash': {
-          const gr = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, size);
-          gr.addColorStop(0, `rgba(${r},${g},${b},${t})`);
-          gr.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.fillStyle = gr;
-          ctx.beginPath();
-          ctx.arc(s.x, s.y, size, 0, Math.PI * 2);
-          ctx.fill();
+        case 'flash':
+          ctx.globalAlpha = t;
+          ctx.drawImage(blob(r, g, b, 0.25), s.x - size, s.y - size, size * 2, size * 2);
+          break;
+        case 'fire': {
+          const [fr, fg, fb] = fireColor(age);
+          ctx.globalAlpha = Math.min(1, t * 1.6) * 0.6;
+          ctx.drawImage(blob(fr, fg, fb, 0.45), s.x - size, s.y - size, size * 2, size * 2);
           break;
         }
         case 'ring':
-          ctx.strokeStyle = `rgba(${r},${g},${b},${t * 0.8})`;
-          ctx.lineWidth = Math.max(1, size * 0.12 * t + 1);
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = `rgba(${r},${g},${b},${t * t * 0.55})`;
+          ctx.lineWidth = Math.max(1, size * 0.05 * t + 0.8);
           ctx.beginPath();
           ctx.arc(s.x, s.y, size, 0, Math.PI * 2);
           ctx.stroke();
           break;
         case 'spark': {
-          // Искра — короткий штрих по направлению полёта.
+          // Искра — тонкий штрих по направлению полёта, длина от скорости.
+          ctx.globalAlpha = 1;
           ctx.strokeStyle = `rgba(${r},${g},${b},${t})`;
-          ctx.lineWidth = Math.max(1, size);
+          ctx.lineWidth = Math.max(0.8, size * zoom * 0.8);
           ctx.beginPath();
           ctx.moveTo(s.x, s.y);
-          ctx.lineTo(s.x - p.vx * 0.03 * zoom, s.y - p.vy * 0.03 * zoom);
+          ctx.lineTo(s.x - p.vx * 0.05 * zoom, s.y - p.vy * 0.05 * zoom);
           ctx.stroke();
           break;
         }
-        case 'debris':
+        case 'debris': {
+          ctx.globalAlpha = Math.min(1, t * 1.5);
           ctx.save();
           ctx.translate(s.x, s.y);
           ctx.rotate(p.angle);
-          ctx.fillStyle = `rgba(${r},${g},${b},${Math.min(1, t * 1.5)})`;
-          ctx.fillRect(-size / 2, -size / 3, size, size * 0.66);
+          ctx.fillStyle = `rgb(${r},${g},${b})`;
+          ctx.beginPath();
+          ctx.moveTo(-size * 0.5, -size * 0.3);
+          ctx.lineTo(size * 0.5, -size * 0.15);
+          ctx.lineTo(size * 0.3, size * 0.35);
+          ctx.lineTo(-size * 0.4, size * 0.25);
+          ctx.closePath();
+          ctx.fill();
+          // Раскалённая кромка остывает за первую секунду.
+          const hot = Math.max(0, 1 - (p.max - p.life) / 1.0);
+          if (hot > 0) {
+            ctx.fillStyle = `rgba(255,${140 + 80 * hot},60,${hot})`;
+            ctx.fillRect(-size * 0.5, -size * 0.3, size * 0.35, size * 0.3);
+          }
           ctx.restore();
           break;
+        }
         case 'smoke':
-          ctx.fillStyle = `rgba(${r},${g},${b},${t * t * 0.22})`;
-          ctx.beginPath();
-          ctx.arc(s.x, s.y, size, 0, Math.PI * 2);
-          ctx.fill();
+          // Клуб плавно проявляется и тает.
+          ctx.globalAlpha = Math.min(1, age * 5) * t * 0.5;
+          ctx.drawImage(blob(r, g, b, 0.5), s.x - size, s.y - size, size * 2, size * 2);
           break;
       }
     }
