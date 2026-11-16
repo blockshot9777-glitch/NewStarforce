@@ -2,6 +2,7 @@
 import { MODULES, TEMP_COMFORT_MAX, TEMP_COMFORT_MIN, TILE_WORLD, isModuleType, moduleSize, type ModuleType, type OwnShipView, type Physical } from '@starforce/shared';
 import { store, type ParsedLayout } from '../store';
 import { hullFor } from './gen/hullStore';
+import { wallMask, wallTile } from './gen/interior';
 import { DOOR_CELL, WALL_CELL, drawCell, drawPawn, drawStackArt, floorCell } from './kenney';
 import { drawModule, roundRect } from './modules';
 import { drawPaintedItem, drawPaintedPawn, drawPaintedTile } from './painted';
@@ -112,8 +113,15 @@ function paintWall(
   tileAt: (x: number, y: number) => string,
 ): void {
   if (drawCell(ctx, 'tiles', WALL_CELL[0], WALL_CELL[1], x, y, ts + 0.5)) return;
-  // wall.png — панель с рамкой на каждую клетку. Её не штампуем: соседние стены
-  // сливаются в одну переборку, фаска только там, где соседа-стены нет.
+  // Сплошная стальная переборка: плитка по маске соседей (двери считаются продолжением стены).
+  const joins = (dx: number, dy: number) => {
+    const t = tileAt(gx + dx, gy + dy);
+    return t === 'wall' || t === 'door';
+  };
+  if (ts >= 6) {
+    ctx.drawImage(wallTile(wallMask(joins)), x, y, ts + 0.5, ts + 0.5);
+    return;
+  }
   ctx.fillStyle = '#7f8894';
   ctx.fillRect(x, y, ts + 0.5, ts + 0.5);
   const edge = Math.max(1, ts * 0.14);
