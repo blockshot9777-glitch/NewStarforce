@@ -949,7 +949,7 @@ const SKIN = ['#f1c27d', '#e0ac69', '#8d5524', '#c68642', '#ffdbac'];
 /** Значок занятия (или тревоги) над головой — как в RimWorld/Space Haven: видно, кто чем занят. */
 function drawCrewBubble(ctx: CanvasRenderingContext2D, c: OwnShipView['crew'][number], x: number, y: number, ts: number, t: number): void {
   if (ts < 18 || c.state === 'cryo') return;
-  const urgent = c.health < 35 ? 'hurt' : !c.robot && c.food < 15 ? 'food' : !c.robot && c.rest < 10 ? 'rest' : null;
+  const urgent = c.health < 35 ? 'hurt' : c.breakdown ? 'break' : !c.robot && c.food < 15 ? 'food' : !c.robot && c.rest < 10 ? 'rest' : null;
   const icon = urgent ?? (c.job ?? (c.state === 'sleeping' ? 'sleep' : c.state === 'eating' ? 'eat' : c.state === 'healing' ? 'heal' : null));
   if (!icon) return;
   const r = Math.min(11, ts * 0.22);
@@ -1035,6 +1035,13 @@ function drawCrewBubble(ctx: CanvasRenderingContext2D, c: OwnShipView['crew'][nu
         ctx.moveTo(dx * k, -k * 0.2);
         ctx.lineTo(dx * k, -k * 0.85);
       }
+      ctx.stroke();
+      break;
+    case 'break': // срыв — молния
+      ctx.moveTo(k * 0.3, -k * 0.9);
+      ctx.lineTo(-k * 0.45, k * 0.1);
+      ctx.lineTo(k * 0.1, k * 0.1);
+      ctx.lineTo(-k * 0.3, k * 0.9);
       ctx.stroke();
       break;
     case 'heal':

@@ -34,7 +34,15 @@ describe('предупреждения', () => {
 
   it('прогноз воды: предупреждение заранее, с подсказкой, и в снимке', () => {
     const { w, p, ship } = idleWorld();
-    steps(w, 28 * 60);
+    // Первое появление предупреждения: заранее (экипаж ещё жив и здоров), сначала уровнем «внимание».
+    let minute = 0;
+    while (minute < 40 && !shipAlerts(ship).some((a) => a.id === 'water')) {
+      steps(w, 60);
+      minute++;
+    }
+    expect(minute).toBeGreaterThanOrEqual(15);
+    expect(minute).toBeLessThanOrEqual(35);
+    expect(ship.crew.filter((c) => c.health > 50).length).toBe(3);
     const water = shipAlerts(ship).find((a) => a.id === 'water');
     expect(water?.level).toBe('warn');
     expect(water?.text).toMatch(/Вода кончится через ~\d+ мин/);

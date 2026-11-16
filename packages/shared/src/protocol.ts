@@ -1,9 +1,9 @@
 // Сообщения между клиентом и сервером. Клиент только просит — всё решает сервер.
 import type { Alert } from './alerts';
-import type { Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, SignalKind } from './defs';
+import type { Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, SignalKind, ThoughtKind, TraitKind } from './defs';
 import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry, SurfaceActor, WorkPriority } from './state';
 
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 10;
 
 export type Command =
   | { c: 'move'; x: number; y: number }
@@ -66,6 +66,11 @@ export interface CrewView {
   draft: boolean;
   /** Куда игрок отправил пешку, иначе null. */
   order: { x: number; y: number } | null;
+  /** Настроение 0..100, черта характера, текущие мысли (см. THOUGHTS) и идёт ли срыв. */
+  mood: number;
+  trait: TraitKind | null;
+  thoughts: ThoughtKind[];
+  breakdown: boolean;
 }
 
 export interface ModuleView {

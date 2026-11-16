@@ -1,5 +1,7 @@
 // Внутренняя жизнь корабля: энергосеть, жизнеобеспечение, строительство и ИИ экипажа.
 import {
+  MOOD_BASE,
+  TRAIT_KINDS,
   BATTERY_CAPACITY,
   BASE_SENSOR_RANGE,
   CHAR_TILES,
@@ -81,6 +83,10 @@ export function randomCrew(rng: Rng, id: number, x: number, y: number): Crew {
     draft: false,
     order: null,
     timer: 0,
+    mood: MOOD_BASE,
+    trait: rng.pick(TRAIT_KINDS),
+    stress: 0,
+    breakdown: 0,
   };
 }
 
@@ -88,6 +94,7 @@ export function makeRobot(rng: Rng, id: number, x: number, y: number): Crew {
   const c = randomCrew(rng, id, x, y);
   c.name = `Робот ${['РБ', 'ТК', 'СР', 'МК'][rng.int(0, 3)]}-${rng.int(100, 999)}`;
   c.robot = true;
+  c.trait = null;
   c.food = 100;
   c.rest = 100;
   c.skills = { engineering: 6, botany: 4, piloting: 3, combat: 2 };
@@ -151,6 +158,7 @@ export function createStarterShip(opts: {
     stockpile: [],
     crew: [],
     fires: {},
+    grief: 0,
     urgent: [],
     mineResource: null,
     mineProgress: 0,

@@ -1136,3 +1136,99 @@ export const SIGNALS: Record<SignalKind, SignalDef> = {
 };
 
 export const SIGNAL_KINDS = Object.keys(SIGNALS) as SignalKind[];
+
+// ---------- Настроение и черты характера (как в RimWorld: настроение складывается из «мыслей») ----------
+
+export type TraitKind = 'hardworker' | 'glutton' | 'ascetic' | 'nightowl' | 'tough' | 'optimist' | 'gloomy' | 'fast';
+
+export interface TraitDef {
+  name: string;
+  desc: string;
+  /** Множитель скорости работы. */
+  work?: number;
+  /** Множитель расхода еды. */
+  foodDecay?: number;
+  /** Множитель урона от удушья, голода, холода и жары. */
+  damage?: number;
+  /** Множитель скорости ходьбы. */
+  speed?: number;
+  /** Темнота не мешает работать и не портит настроение. */
+  ignoresDark?: boolean;
+  /** Постоянная «мысль» этой черты. */
+  thought?: ThoughtKind;
+}
+
+export const TRAITS: Record<TraitKind, TraitDef> = {
+  hardworker: { name: 'Трудяга', desc: 'Работает на 20% быстрее.', work: 1.2 },
+  glutton: { name: 'Обжора', desc: 'Ест на 40% больше.', foodDecay: 1.4 },
+  ascetic: { name: 'Аскет', desc: 'Ест на 30% меньше.', foodDecay: 0.7 },
+  nightowl: { name: 'Сова', desc: 'Темнота не мешает работать и не портит настроение.', ignoresDark: true },
+  tough: { name: 'Крепкий', desc: 'Удушье, голод, холод и жара ранят на 40% слабее.', damage: 0.6 },
+  optimist: { name: 'Оптимист', desc: 'Настроение всегда немного выше.', thought: 'optimist' },
+  gloomy: { name: 'Мрачный', desc: 'Настроение всегда немного ниже.', thought: 'gloomy' },
+  fast: { name: 'Шустрый', desc: 'Ходит на 20% быстрее.', speed: 1.2 },
+};
+
+export const TRAIT_KINDS = Object.keys(TRAITS) as TraitKind[];
+
+export type ThoughtKind =
+  | 'starving'
+  | 'hungry'
+  | 'fed'
+  | 'exhausted'
+  | 'tired'
+  | 'rested'
+  | 'hurt'
+  | 'thinAir'
+  | 'cold'
+  | 'hot'
+  | 'dark'
+  | 'cozy'
+  | 'grief'
+  | 'optimist'
+  | 'gloomy';
+
+/** Мысль: что видит игрок и на сколько она сдвигает настроение. */
+export const THOUGHTS: Record<ThoughtKind, { text: string; mood: number }> = {
+  starving: { text: 'Умираю с голоду', mood: -20 },
+  hungry: { text: 'Голоден', mood: -10 },
+  fed: { text: 'Сыт', mood: 5 },
+  exhausted: { text: 'Валюсь с ног', mood: -15 },
+  tired: { text: 'Устал', mood: -8 },
+  rested: { text: 'Выспался', mood: 5 },
+  hurt: { text: 'Ранен', mood: -10 },
+  thinAir: { text: 'Нечем дышать', mood: -12 },
+  cold: { text: 'Холодно', mood: -8 },
+  hot: { text: 'Жарко', mood: -8 },
+  dark: { text: 'Сижу в темноте', mood: -5 },
+  cozy: { text: 'Светло, тепло и есть чем дышать', mood: 6 },
+  grief: { text: 'На борту погиб человек', mood: -15 },
+  optimist: { text: 'Оптимист', mood: 8 },
+  gloomy: { text: 'Мрачный', mood: -8 },
+};
+
+export const MOOD_BASE = 50;
+/** Пунктов в секунду, с которыми настроение идёт к сумме мыслей. */
+export const MOOD_RATE = 0.5;
+/** Пороги потребностей для мыслей. */
+export const MOOD_STARVING_BELOW = 5;
+export const MOOD_HUNGRY_BELOW = 30;
+export const MOOD_FED_ABOVE = 70;
+export const MOOD_EXHAUSTED_BELOW = 5;
+export const MOOD_TIRED_BELOW = 25;
+export const MOOD_RESTED_ABOVE = 70;
+export const MOOD_HURT_BELOW = 50;
+export const MOOD_THIN_AIR_BELOW = 0.6;
+/** Воодушевлён (≥) — работает быстрее; подавлен (<) — медленнее. */
+export const MOOD_HIGH = 70;
+export const MOOD_LOW = 30;
+export const MOOD_HIGH_WORK = 1.15;
+export const MOOD_LOW_WORK = 0.8;
+/** Срыв: настроение ниже порога дольше MOOD_BREAK_AFTER секунд — человек бросает работу на MOOD_BREAK_SECONDS. */
+export const MOOD_BREAK_BELOW = 15;
+export const MOOD_BREAK_AFTER = 45;
+export const MOOD_BREAK_SECONDS = 40;
+/** После срыва становится легче. */
+export const MOOD_BREAK_RELIEF = 25;
+/** Сколько секунд команда переживает смерть на борту. */
+export const GRIEF_SECONDS = 240;

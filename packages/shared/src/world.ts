@@ -61,6 +61,7 @@ import {
 import { clearOrder, isPiloted, normalizePriorities, orderCryo, orderMove, placeCrewOnBoard, setDraft, setPriority, toggleUrgent, updateCrew } from './crew';
 import { normalizeTemp } from './temp';
 import { shipAlerts, trackRates } from './alerts';
+import { crewThoughts, normalizeMind } from './mood';
 import { allBoarded, generateSurface, landCrew, orderSurfaceMove, stepSurface, toggleSurfaceMark } from './surface';
 import { dropCarry, giveShip, materialsReady, normalizeStorage, putInStockpile, removeStored, syncStored, takeShip } from './items';
 import type { Command, Contact, LayoutView, OwnShipView, SignalEventView, Snapshot, SurfaceView } from './protocol';
@@ -208,11 +209,16 @@ export class World {
       normalizeStorage(ship, () => state.nextId++);
       normalizeTemp(ship);
       ship.stats.rates ??= {};
-      for (const c of ship.crew) normalizePriorities(c);
+      ship.grief ??= 0;
+      for (const c of ship.crew) {
+        normalizePriorities(c);
+        normalizeMind(c);
+      }
     }
     for (const e of state.expeditions) {
       for (const c of e.crew) {
         normalizePriorities(c);
+        normalizeMind(c);
         if (c.carry === undefined) c.carry = null;
       }
     }
@@ -1441,6 +1447,10 @@ export class World {
         carry: c.carry ? { resource: c.carry.resource, amount: Math.round(c.carry.amount * 100) / 100 } : null,
         draft: c.draft,
         order: c.order ? { x: c.order.x, y: c.order.y } : null,
+        mood: Math.round(c.mood),
+        trait: c.trait,
+        thoughts: crewThoughts(ship, c),
+        breakdown: c.breakdown > 0,
       })),
       fires: Object.entries(ship.fires).map(([t, v]) => [Number(t), r2(v)]),
       urgent: [...ship.urgent],

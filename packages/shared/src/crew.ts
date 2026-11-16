@@ -1,10 +1,11 @@
 // ИИ экипажа в духе RimWorld: потребности → задачи → перемещение по сетке корабля.
-import { CREW_SPEED, EAT_RESTORE, EAT_SECONDS, FOOD_DECAY, HYDRO_YIELD, MODULES, REST_DECAY, ROBOT_SPEED_MULT, SUFFOCATE_BELOW, DARK_WORK_MULT, TEMP_COMFORT_MAX, TEMP_COMFORT_MIN, TEMP_HURT } from './defs';
+import { CREW_SPEED, MOOD_BREAK_RELIEF, EAT_RESTORE, EAT_SECONDS, FOOD_DECAY, HYDRO_YIELD, MODULES, REST_DECAY, ROBOT_SPEED_MULT, SUFFOCATE_BELOW, DARK_WORK_MULT, TEMP_COMFORT_MAX, TEMP_COMFORT_MIN, TEMP_HURT } from './defs';
 import { findPath, inBounds, isWalkable, neighbors4, tileAt } from './grid';
 import { dropCarry, dropLoose, materialsReady, planHaulJobs, removeStored, stepHaul } from './items';
 import { JOB_KINDS, defaultPriorities, type Crew, type Job, type JobKind, type Ship, type ShipModule, type Vec, type WorkPriority } from './state';
 import { airAt, blueprintAt, completeBlueprint, functional, isLit, moduleAt, walkableTiles, type ShipContext } from './ship';
 import { tempAt } from './temp';
+import { moodWorkMult, startGrief, stepMood, traitOf } from './mood';
 
 /** Запасной порядок, когда личные приоритеты совпали: пожар, мостик, ремонт, переноска, урожай, стройка. */
 const JOB_PRIORITY: JobKind[] = ['extinguish', 'pilot', 'repair', 'haul', 'harvest', 'build'];
@@ -56,8 +57,9 @@ function roundVec(v: Vec): Vec {
 
 function workSpeed(ship: Ship, c: Crew, skill: keyof Crew['skills']): number {
   const tired = c.rest <= 0 ? 0.5 : 1;
-  const dark = isLit(ship, c.x, c.y) ? 1 : DARK_WORK_MULT;
-  return (0.5 + c.skills[skill] / 10) * tired * dark;
+  const trait = traitOf(c);
+  const dark = isLit(ship, c.x, c.y) || trait.ignoresDark ? 1 : DARK_WORK_MULT;
+  return (0.5 + c.skills[skill] / 10) * tired * dark * (trait.work ?? 1) * moodWorkMult(c);
 }
 
 /** Путь до клетки, с которой можно работать над (x, y): сама клетка, если проходима, иначе соседняя. */
@@ -143,7 +145,7 @@ function freeBed(ship: Ship, c: Crew): ShipModule | undefined {
 }
 
 function moveAlong(c: Crew, dt: number): boolean {
-  let budget = CREW_SPEED * (c.robot ? ROBOT_SPEED_MULT : 1) * (c.rest <= 0 ? 0.6 : 1) * dt;
+  let budget = CREW_SPEED * (c.robot ? ROBOT_SPEED_MULT : 1) * (c.rest <= 0 ? 0.6 : 1) * (traitOf(c).speed ?? 1) * dt;
   while (budget > 0 && c.path.length) {
     const n = c.path[0];
     const dx = n.x - c.x;
@@ -309,26 +311,32 @@ export function toggleUrgent(ship: Ship, x: number, y: number): string | null {
 // ---------- Тик экипажа ----------
 
 export function updateCrew(ship: Ship, dt: number, ctx: ShipContext): void {
+  ship.grief = Math.max(0, (ship.grief ?? 0) - dt);
   for (const c of ship.crew) {
     if (c.state === 'cryo') continue;
     if (!c.robot) {
-      c.food = Math.max(0, c.food - FOOD_DECAY * dt);
+      const trait = traitOf(c);
+      const hurt = trait.damage ?? 1;
+      c.food = Math.max(0, c.food - FOOD_DECAY * (trait.foodDecay ?? 1) * dt);
       if (c.state !== 'sleeping') c.rest = Math.max(0, c.rest - REST_DECAY * dt);
       const suffocating = airAt(ship, c.x, c.y) < SUFFOCATE_BELOW;
-      if (suffocating) c.health -= 4 * dt;
-      if (c.food <= 0) c.health -= 0.5 * dt;
+      if (suffocating) c.health -= 4 * hurt * dt;
+      if (c.food <= 0) c.health -= 0.5 * hurt * dt;
       // Холод и жара бьют в жилом воздухе. В вакууме урон уже даёт удушье.
       const degrees = tempAt(ship, c.x, c.y);
       const comfortable = degrees >= TEMP_COMFORT_MIN && degrees <= TEMP_COMFORT_MAX;
-      if (!suffocating && degrees < TEMP_COMFORT_MIN) c.health -= TEMP_HURT * (TEMP_COMFORT_MIN - degrees) * dt;
-      else if (!suffocating && degrees > TEMP_COMFORT_MAX) c.health -= TEMP_HURT * (degrees - TEMP_COMFORT_MAX) * dt;
+      if (!suffocating && degrees < TEMP_COMFORT_MIN) c.health -= TEMP_HURT * hurt * (TEMP_COMFORT_MIN - degrees) * dt;
+      else if (!suffocating && degrees > TEMP_COMFORT_MAX) c.health -= TEMP_HURT * hurt * (degrees - TEMP_COMFORT_MAX) * dt;
       if (!suffocating && c.food > 20 && comfortable) c.health = Math.min(100, c.health + 0.2 * dt);
+      stepMood(ship, c, dt, ctx.log);
     }
   }
   for (const c of ship.crew) {
     if (c.health > 0) continue;
     dropCarry(ship, c, ctx.nextId);
     ctx.log(`${c.name} погиб(ла) на борту.`, 'bad');
+    // Смерть человека бьёт по настроению всей команды.
+    if (!c.robot) startGrief(ship);
   }
   ship.crew = ship.crew.filter((c) => c.health > 0);
 
@@ -366,6 +374,17 @@ export function updateCrew(ship: Ship, dt: number, ctx: ShipContext): void {
       else if (preemptBudget > 0 && !isCryo && c.job.kind !== 'pilot' && !urgent.has(jobKey(c.job))) {
         releaseJob(ship, c, reserved, ctx.nextId);
         preemptBudget--;
+      }
+    }
+
+    // Срыв: человек бросил работу. Есть, спать и спасаться он продолжает, приказы «иди сюда» выполняет.
+    if (c.breakdown > 0) {
+      c.breakdown -= dt;
+      if (c.job) releaseJob(ship, c, reserved, ctx.nextId);
+      if (c.breakdown <= 0) {
+        c.breakdown = 0;
+        c.mood = Math.min(100, c.mood + MOOD_BREAK_RELIEF);
+        ctx.log(`${c.name} взял(а) себя в руки и возвращается к работе.`, 'info');
       }
     }
 
@@ -461,6 +480,10 @@ export function updateCrew(ship: Ship, dt: number, ctx: ShipContext): void {
       // 3.5. Приказ «иди сюда» важнее работы, но не воздуха, еды и сна.
       if (c.order) {
         followOrder(ship, c, dt);
+        continue;
+      }
+      if (c.breakdown > 0) {
+        c.path = [];
         continue;
       }
       // 4. Работа: важные, пожары и пробоины впереди, остальное — по личному приоритету, внутри — ближайшая.

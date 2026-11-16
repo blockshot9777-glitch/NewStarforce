@@ -6,6 +6,11 @@ import {
   EXPEDITION_MAX_CREW,
   HULLS,
   MODULES,
+  MOOD_BREAK_BELOW,
+  MOOD_HIGH,
+  MOOD_LOW,
+  THOUGHTS,
+  TRAITS,
   MODULE_TYPES,
   NPCS,
   RECRUIT_COST,
@@ -426,6 +431,24 @@ function bar(v: number, color: string): string {
   return `<div class="mini"><div style="width:${Math.max(0, Math.min(100, v)).toFixed(0)}%;background-color:${color};--c:${color}"></div></div>`;
 }
 
+type CrewV = OwnShipView['crew'][number];
+
+const moodColor = (m: number) => (m >= MOOD_HIGH ? '#69f0ae' : m < MOOD_BREAK_BELOW ? '#ff5252' : m < MOOD_LOW ? '#ffab40' : '#b39ddb');
+const moodWord = (c: CrewV) => (c.breakdown ? 'срыв' : c.mood >= MOOD_HIGH ? 'воодушевлён' : c.mood < MOOD_BREAK_BELOW ? 'на грани' : c.mood < MOOD_LOW ? 'подавлен' : 'в порядке');
+
+/** Мысли списком: «+5 Сыт», «−10 Голоден» — видно, что именно портит или поднимает настроение. */
+function thoughtsHtml(c: CrewV): string {
+  return [...c.thoughts]
+    .sort((a, b) => THOUGHTS[a].mood - THOUGHTS[b].mood)
+    .map((t) => {
+      const v = THOUGHTS[t].mood;
+      return `<div class="${v < 0 ? 'thought-bad' : 'thought-good'}">${v > 0 ? '+' : '−'}${Math.abs(v)} ${esc(THOUGHTS[t].text)}</div>`;
+    })
+    .join('');
+}
+
+const traitHtml = (c: CrewV) => (c.trait ? `<span class="trait" title="${esc(TRAITS[c.trait].desc)}">${esc(TRAITS[c.trait].name)}</span>` : '');
+
 function renderCrew(own: OwnShipView | null): void {
   const el = $('crew');
   if (!own || store.panel !== 'crew' || store.mode !== 'ship') {
@@ -442,23 +465,24 @@ function renderCrew(own: OwnShipView | null): void {
         return `<button class="pri ${v === 0 ? 'off' : ''}" data-act="priority" data-id="${c.id}" data-kind="${kind}" title="${name}: 1 — в первую очередь, 4 — в последнюю, 0 — не делать">${name} ${v}</button>`;
       }).join('');
       return `<tr class="${store.selectedCrew === c.id ? 'sel' : ''}">
-        <td><a data-act="selcrew" data-id="${c.id}">${c.robot ? '🤖 ' : ''}${esc(c.name)}</a></td>
+        <td><a data-act="selcrew" data-id="${c.id}">${c.robot ? '🤖 ' : ''}${esc(c.name)}</a> ${traitHtml(c)}</td>
         <td title="Здоровье">${bar(c.health, c.health < 35 ? '#ff5252' : '#69f0ae')}</td>
         <td title="Сытость">${c.robot ? '—' : bar(c.food, '#ffb74d')}</td>
         <td title="Бодрость">${c.robot ? '—' : bar(c.rest, '#64b5f6')}</td>
+        <td title="Настроение: ${c.robot ? 'у роботов его нет' : `${c.mood} — ${moodWord(c)}. ${c.thoughts.map((t) => THOUGHTS[t].text).join(', ')}`}">${c.robot ? '—' : bar(c.mood, moodColor(c.mood))}</td>
         <td>${c.draft ? 'ведёт' : STATE_NAMES[c.state]}${c.job ? ` · ${JOB_NAMES[c.job]}` : ''}${c.order ? ` → ${c.order.x},${c.order.y}` : ''}</td>
         <td class="skills" title="Инженерия / Ботаника / Пилотирование / Бой">${s.engineering}/${s.botany}/${s.piloting}/${s.combat}</td>
         <td><button data-act="draft" data-id="${c.id}" class="${c.draft ? 'on' : ''}" title="Прямое управление: пешка стоит, пока не прикажете идти">${c.draft ? 'Отпустить' : 'Вести'}</button>
             ${c.robot ? '' : `<button data-act="cryo" data-id="${c.id}">${c.state === 'cryo' ? 'Разбудить' : '❄ Криосон'}</button>`}
             <button data-act="expcrew" data-id="${c.id}" class="${store.expeditionCrew.has(c.id) ? 'on' : ''}" title="Выбрать для высадки на планету">🚀</button></td>
-      </tr><tr class="pri-row"><td colspan="7">${pri}</td></tr>`;
+      </tr><tr class="pri-row"><td colspan="8">${pri}</td></tr>`;
     })
     .join('');
   setHtml(
     el,
     `<div class="panel-title">Команда ${own.crew.length + away}/${own.crewCap}${away ? ` (на планете: ${away})` : ''}</div>
-     <table><tr><th>Имя</th><th>❤</th><th>🍞</th><th>☾</th><th>Занятие</th><th>И/Б/П/Б</th><th></th></tr>${rows}</table>
-     <div class="hint">Цифры под именем — приоритет работы: 1 раньше всего, 4 позже, 0 запрещает. «Вести» — пешка ждёт приказа, ПКМ по полу отправит её в клетку. 🚀 — отметить для высадки.</div>`,
+     <table><tr><th>Имя</th><th>❤</th><th>🍞</th><th>☾</th><th title="Настроение">☺</th><th>Занятие</th><th>И/Б/П/Б</th><th></th></tr>${rows}</table>
+     <div class="hint">☺ — настроение: наведите, чтобы увидеть причины. Цифры под именем — приоритет работы: 1 раньше всего, 4 позже, 0 запрещает. «Вести» — пешка ждёт приказа, ПКМ по полу отправит её в клетку. 🚀 — отметить для высадки.</div>`,
   );
 }
 
@@ -547,6 +571,7 @@ function pawnCard(c: OwnShipView['crew'][number]): string {
     <div>Здоровье ${bar(c.health, c.health < 35 ? '#ff5252' : '#69f0ae')} ${Math.round(c.health)}</div>
     <div>Сытость ${c.robot ? '—' : `${bar(c.food, '#ffb74d')} ${Math.round(c.food)}`}</div>
     <div>Бодрость ${c.robot ? '—' : `${bar(c.rest, '#64b5f6')} ${Math.round(c.rest)}`}</div>
+    ${c.robot ? '' : `<div>Настроение ${bar(c.mood, moodColor(c.mood))} ${c.mood} · <span style="color:${moodColor(c.mood)}">${moodWord(c)}</span> ${traitHtml(c)}</div><div class="thoughts">${thoughtsHtml(c)}</div>`}
     <div class="muted">${c.draft ? 'ждёт приказа' : STATE_NAMES[c.state]}${c.job ? ` · ${JOB_NAMES[c.job]}` : ''} · ${going}</div>
     <div class="muted">В руках: ${carry}</div>
     <div class="skills">Инженерия ${s.engineering} · Ботаника ${s.botany} · Пилот ${s.piloting} · Бой ${s.combat}</div>
@@ -731,10 +756,11 @@ export function renderTooltip(): void {
   const parts: string[] = [];
   for (const c of own.crew) {
     if (Math.round(c.x) !== h.x || Math.round(c.y) !== h.y) continue;
-    const doing = c.draft ? 'ждёт приказа' : `${STATE_NAMES[c.state]}${c.job ? ` · ${JOB_NAMES[c.job]}` : ''}`;
+    const doing = c.breakdown ? '<span class="warn">срыв — не работает</span>' : c.draft ? 'ждёт приказа' : `${STATE_NAMES[c.state]}${c.job ? ` · ${JOB_NAMES[c.job]}` : ''}`;
     parts.push(
       `<div class="tip-title">${c.robot ? '🤖 ' : ''}${esc(c.name)}</div><div class="muted">${doing}</div>` +
         `<div class="tip-bars"><span>❤</span>${bar(c.health, '#69f0ae')}${c.robot ? '' : `<span>🍞</span>${bar(c.food, '#ffb74d')}<span>☾</span>${bar(c.rest, '#90caf9')}`}</div>` +
+        (c.robot ? '' : `<div class="tip-bars"><span>☺</span>${bar(c.mood, moodColor(c.mood))}<span style="color:${moodColor(c.mood)}">${moodWord(c)}</span> ${traitHtml(c)}</div><div class="thoughts">${thoughtsHtml(c)}</div>`) +
         (c.carry ? `<div class="muted">несёт: ${esc(RESOURCE_NAMES[c.carry.resource])} ×${fmt(c.carry.amount)}</div>` : ''),
     );
   }

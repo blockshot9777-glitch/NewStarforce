@@ -1,6 +1,7 @@
 // Предупреждения капитану в духе RimWorld: что вот-вот убьёт экипаж и что с этим сделать.
 // Считаются из состояния корабля при сборке снимка; хранится только сглаженная скорость расхода ресурсов.
 import {
+  MOOD_BREAK_BELOW,
   ALERT_ETA_BAD_MIN,
   ALERT_ETA_WARN_MIN,
   RATE_CLAMP_PER_MIN,
@@ -115,6 +116,11 @@ export function shipAlerts(ship: Ship): Alert[] {
   for (const c of living) {
     if (c.health < 35) {
       out.push({ id: `hurt:${c.id}`, level: 'warn', text: `${c.name} тяжело ранен(а)`, hint: 'Нужен запитанный медотсек.' });
+    }
+    if (c.breakdown > 0) {
+      out.push({ id: `break:${c.id}`, level: 'warn', text: `${c.name}: срыв, не работает`, hint: 'Пройдёт само. Чтобы не повторялось — еда, сон, свет, тепло и воздух.' });
+    } else if (!c.robot && c.mood < MOOD_BREAK_BELOW) {
+      out.push({ id: `mood:${c.id}`, level: 'warn', text: `${c.name} на грани срыва`, hint: 'Наведите на человека — увидите, что его гнетёт: голод, усталость, темнота, холод.' });
     }
   }
   return out;

@@ -1,5 +1,5 @@
 // Состояние мира на сервере. Только простые данные (без классов), чтобы всё легко сохранялось в JSON.
-import type { Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, SignalKind, Tile } from './defs';
+import type { Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, SignalKind, Tile, TraitKind } from './defs';
 
 export interface Vec {
   x: number;
@@ -101,6 +101,14 @@ export interface Crew {
   /** Клетка, куда игрок отправил пешку. Пусто — приказа идти нет. */
   order: { x: number; y: number } | null;
   timer: number;
+  /** Настроение 0..100 (см. mood.ts). У роботов не меняется. */
+  mood: number;
+  /** Черта характера; у роботов и в старых сохранениях — null. */
+  trait: TraitKind | null;
+  /** Сколько секунд настроение держится ниже порога срыва. */
+  stress: number;
+  /** Срыв: сколько секунд человек ещё не берёт работу. */
+  breakdown: number;
 }
 
 export interface Ship {
@@ -109,6 +117,8 @@ export interface Ship {
   systemId: number;
   name: string;
   hull: HullClass;
+  /** Сколько секунд команда ещё переживает смерть на борту. */
+  grief: number;
   x: number;
   y: number;
   vx: number;

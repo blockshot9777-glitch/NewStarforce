@@ -90,7 +90,12 @@ npm start          # сборка клиента + сервер на :8787
    в `world.ts`; команда `signal`; поле `event` в `OwnShipView`, контакт `signal`; карточка — `eventCard` в `ui.ts`,
    маяк и стрелка у края экрана — `drawSignal` в `render/space.ts`. Тесты — `signals.test.ts`.
    **Новое событие = новая запись в `SIGNALS`** (текст, варианты, исходы с весами) — код менять не нужно.
-9. Далее — `docs/ROADMAP.md`, фазы 3–4.
+9. **Настроение и черты характера — сделано.** `mood.ts`: мысли `crewThoughts`, цель `moodTarget`, шаг и срыв
+   `stepMood`, миграция `normalizeMind`; данные и баланс — `TRAITS`, `THOUGHTS`, `MOOD_*` в `defs.ts`; влияние на
+   работу и ходьбу — `workSpeed`/`moveAlong` в `crew.ts`; поля `mood/trait/thoughts/breakdown` в `CrewView`;
+   тревоги `break:`/`mood:` в `alerts.ts`; показ — `renderCrew`, `pawnCard`, `renderTooltip` в `ui.ts`.
+   Тесты — `mood.test.ts`. **Новая мысль или черта = запись в `THOUGHTS`/`TRAITS`** (+ условие в `crewThoughts`).
+10. Далее — `docs/ROADMAP.md`, фазы 3–4.
 
 ## Арт
 

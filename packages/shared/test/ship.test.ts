@@ -113,11 +113,14 @@ describe('комнаты и воздух', () => {
     const rooms = shipRooms(ship);
     const room = rooms.rooms[rooms.roomOf[p.y * ship.w + p.x]];
     expect(room.vented).toBe(true);
-    const before = ship.air[room.tiles[0]];
+    // Клетка комнаты, в которой был воздух (сама пробоина — бывшая стена, там его не было).
+    const probe = room.tiles.reduce((best, t) => (ship.air[t] > ship.air[best] ? t : best), room.tiles[0]);
+    const before = ship.air[probe];
+    expect(before).toBeGreaterThan(0.5);
     ship.crew = [];
     distributePower(ship, 0.1, ctx);
     for (let i = 0; i < 30; i++) lifeSupport(ship, 0.1, nextId);
-    expect(ship.air[room.tiles[0]]).toBeLessThan(before * 0.3);
+    expect(ship.air[probe]).toBeLessThan(before * 0.3);
   });
 
   it('экипаж заделывает пробоину, и комната снова наполняется воздухом', () => {
