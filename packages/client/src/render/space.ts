@@ -641,6 +641,26 @@ function drawFx(ctx: CanvasRenderingContext2D, S: ToScreen, z: number): void {
     ctx.restore();
   }
   drawParticles(ctx, S, z);
+  // Всплывающие числа урона: поднимаются и тают за ~1.1 с.
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  store.floaters = store.floaters.filter((f) => now - f.born < 1100);
+  for (const f of store.floaters) {
+    const k = (now - f.born) / 1100;
+    const p = S(f.x, f.y);
+    const pop = k < 0.12 ? 0.7 + (k / 0.12) * 0.5 : 1.2 - Math.min(0.2, (k - 0.12) * 0.4);
+    ctx.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+    ctx.font = `800 ${Math.round(15 * pop)}px system-ui`;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    const y = p.y - 18 - k * 46;
+    ctx.strokeText(f.text, p.x, y);
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, p.x, y);
+  }
+  ctx.restore();
 }
 
 /** Луч добывающего лазера: ореол, яркая сердцевина, бегущие к цели сгустки энергии и вспышка в точке касания. */

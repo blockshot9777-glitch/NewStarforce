@@ -30,6 +30,11 @@ export const store = {
   tickMs: 100,
   layouts: new Map<number, ParsedLayout>(),
   fx: [] as { fx: Fx; born: number; spawned?: boolean }[],
+  /** Всплывающие числа урона (мир) и «встряска» камеры при попаданиях по своему кораблю — только визуал. */
+  floaters: [] as { x: number; y: number; text: string; color: string; born: number }[],
+  shake: 0,
+  hurtAt: -1e9,
+  hurtShield: false,
   log: [] as (LogEntry & { at: number })[],
   chat: [] as (ChatEntry & { at: number })[],
   toast: null as { text: string; at: number } | null,
@@ -84,6 +89,35 @@ export function applySnapshot(s: Snapshot): void {
     store.mode = 'ship';
     store.landingId = null;
     store.planetCrew = null;
+  }
+  // Сколько потеряли корабли и враги с прошлого снимка — числа урона и встряска своего корабля.
+  if (store.prev) {
+    const before = new Map<number, { hp: number; shield: number }>();
+    for (const c of store.prev.contacts) if (c.k === 'npc' || c.k === 'ship') before.set(c.id, { hp: c.hp, shield: c.shield });
+    for (const c of s.contacts) {
+      if (c.k !== 'npc' && c.k !== 'ship') continue;
+      const b = before.get(c.id);
+      if (!b) continue;
+      const dmg = b.hp - c.hp + Math.max(0, b.shield - c.shield);
+      if (dmg >= 1) store.floaters.push({ x: c.x, y: c.y, text: `−${Math.round(dmg)}`, color: b.hp - c.hp >= 1 ? '#ffb74d' : '#80d8ff', born: now });
+    }
+    const was = store.prev.ship;
+    const me = s.ship;
+    if (was && me && was.id === me.id) {
+      const hull = was.hp - me.hp;
+      const shield = was.shield - me.shield;
+      if (hull >= 1) {
+        store.shake = Math.min(14, store.shake + 3 + hull * 0.4);
+        store.hurtAt = now;
+        store.hurtShield = false;
+        store.floaters.push({ x: me.x, y: me.y, text: `−${Math.round(hull)}`, color: '#ff5252', born: now });
+      } else if (shield >= 1) {
+        store.shake = Math.min(14, store.shake + 1.2);
+        store.hurtAt = now;
+        store.hurtShield = true;
+      }
+    }
+    if (store.floaters.length > 40) store.floaters.splice(0, store.floaters.length - 40);
   }
   for (const fx of s.fx) {
     store.fx.push({ fx, born: now });

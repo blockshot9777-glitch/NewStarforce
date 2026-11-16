@@ -368,6 +368,18 @@ function frame(now: number): void {
   }
 }
 
+/** Вспышка по краям экрана при попадании: красная — корпус, голубая — щит. */
+function drawHurt(now: number): void {
+  const age = (now - store.hurtAt) / 1000;
+  if (age > 0.5) return;
+  const a = (1 - age / 0.5) * (store.hurtShield ? 0.25 : 0.45);
+  const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, store.hurtShield ? `rgba(80,190,255,${a})` : `rgba(255,30,30,${a})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+
 let lastJumping = false;
 let lastSystem = -1;
 
@@ -424,7 +436,14 @@ function drawFrame(now: number): void {
     const tr = store.terrains.get(e.id);
     if (tr) terrainImage(e, tr);
   }
+  // Встряска камеры при попаданиях по своему кораблю (затухает за ~0.5 с).
+  if (store.shake > 0.05) {
+    store.cam.x += ((Math.random() - 0.5) * store.shake) / store.zoom;
+    store.cam.y += ((Math.random() - 0.5) * store.shake) / store.zoom;
+    store.shake *= 0.86;
+  } else store.shake = 0;
   last = drawSpace(ctx, W, H, now / 1000);
+  drawHurt(now);
   drawToolPreview();
   drawMinimap(ctx, W - 190, 70, 180);
   renderUi();
