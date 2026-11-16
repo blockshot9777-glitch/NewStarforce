@@ -20,6 +20,26 @@ export function loadPainted(): void {
   for (const name of ['metal', 'ice', 'water', 'crystals', 'biomass', 'food']) {
     load(`item:${name}`, `sprites/items/${name}.png`);
   }
+  // Поверхность планет: если файла нет — рисуется процедурная замена (см. docs/ASSETS_NEEDED.md).
+  load('planet:shuttle', 'sprites/planet/shuttle.png');
+  for (const c of ['vine', 'stalker', 'sporeling', 'drone_scout', 'ice_crawler', 'magma_beetle', 'beast']) {
+    load(`creature:${c}`, `sprites/planet/${c}.png`);
+  }
+}
+
+/** Любой загруженный спрайт по ключу, по центру (x, y), с поворотом. false — спрайта нет. */
+export function drawPaintedSprite(ctx: CanvasRenderingContext2D, key: string, x: number, y: number, size: number, angle = 0): boolean {
+  const img = ready(key);
+  if (!img) return false;
+  const prev = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = true;
+  ctx.save();
+  ctx.translate(x, y);
+  if (angle) ctx.rotate(angle);
+  ctx.drawImage(img, -size / 2, -size / 2, size, size);
+  ctx.restore();
+  ctx.imageSmoothingEnabled = prev;
+  return true;
 }
 
 function ready(key: string): HTMLImageElement | undefined {

@@ -241,7 +241,10 @@ function onMouseUp(e: MouseEvent): void {
 
 function onWheel(e: WheelEvent): void {
   e.preventDefault();
-  if (store.mode === 'planet') return;
+  if (store.mode === 'planet') {
+    store.planetZoom = Math.max(14, Math.min(72, store.planetZoom * Math.exp(-e.deltaY * 0.0015)));
+    return;
+  }
   const factor = Math.exp(-e.deltaY * 0.0015);
   store.zoomTarget *= factor;
   const [lo, hi] = ZOOM[store.mode];
@@ -262,6 +265,23 @@ function onWheel(e: WheelEvent): void {
 
 function onKey(e: KeyboardEvent): void {
   if ((e.target as HTMLElement).tagName === 'INPUT') return;
+  if (store.mode === 'planet') {
+    // Прокрутка карты планеты: WASD и стрелки (и русская раскладка).
+    const step = 3;
+    const pan: Record<string, [number, number]> = {
+      w: [0, -step], ц: [0, -step], ArrowUp: [0, -step],
+      s: [0, step], ы: [0, step], ArrowDown: [0, step],
+      a: [-step, 0], ф: [-step, 0], ArrowLeft: [-step, 0],
+      d: [step, 0], в: [step, 0], ArrowRight: [step, 0],
+    };
+    const d = pan[e.key];
+    if (d) {
+      e.preventDefault();
+      store.planetCam.x += d[0];
+      store.planetCam.y += d[1];
+      return;
+    }
+  }
   switch (e.key) {
     case 'Tab':
     case ' ':

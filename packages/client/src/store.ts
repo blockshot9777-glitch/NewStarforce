@@ -38,6 +38,9 @@ export const store = {
   landingId: null as number | null,
   /** Выбранный на поверхности член экипажа. */
   planetCrew: null as number | null,
+  /** Камера экрана планеты (в клетках) и размер клетки в пикселях. */
+  planetCam: { x: 22, y: 15 },
+  planetZoom: 44,
   /** Рельеф высадок: сервер шлёт его один раз. */
   terrains: new Map<number, string>(),
   zoom: 4,

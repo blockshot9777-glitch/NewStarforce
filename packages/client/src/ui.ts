@@ -145,11 +145,14 @@ function handleAction(el: HTMLElement): void {
     case 'mode':
       setMode(store.mode === 'ship' ? 'system' : 'ship');
       break;
-    case 'planet':
+    case 'planet': {
       store.landingId = id;
       store.planetCrew = null;
+      const e = store.snap?.expeditions.find((x) => x.id === id);
+      if (e) store.planetCam = { x: e.surface.shuttle.x + 0.5, y: e.surface.shuttle.y + 0.5 };
       setMode('planet');
       break;
+    }
     case 'panel': {
       const p = el.dataset.panel as 'build' | 'crew';
       store.panel = store.panel === p ? null : p;
@@ -342,7 +345,7 @@ function renderButtons(own: OwnShipView | null): void {
     setHtml(
       $('buttons-left'),
       e
-        ? `<span class="planet-hint">ЛКМ — выбрать человека или пометить ресурс важным · ПКМ — отправить выбранного · Esc — на корабль</span>`
+        ? `<span class="planet-hint">ЛКМ — выбрать человека / пометить ресурс · ПКМ — отправить · колесо — масштаб · WASD — карта · Esc — корабль</span>`
         : '',
     );
     setHtml(
