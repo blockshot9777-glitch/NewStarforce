@@ -179,6 +179,7 @@ export function createStarterShip(opts: {
       rates: {},
     },
     lastCombatTick: -1000,
+    aim: 'hull',
     jump: null,
   };
   const spots = walkableTiles(ship).filter((p) => !moduleAt(ship, p.x, p.y));

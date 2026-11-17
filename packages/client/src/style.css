@@ -917,3 +917,27 @@ button.event-option:disabled .event-hint {
 #crew .hint {
   max-width: 860px;
 }
+
+/* Выбор прицела. */
+.aim-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  margin: 4px 0;
+}
+button.aim {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 4px;
+  font-size: 12px;
+}
+button.aim .mini {
+  width: 100%;
+}
+.aim-down {
+  color: var(--bad);
+  font-size: 11px;
+  animation: alert-pulse 1s infinite;
+}

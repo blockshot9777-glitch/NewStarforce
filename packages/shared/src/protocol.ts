@@ -1,15 +1,17 @@
 // Сообщения между клиентом и сервером. Клиент только просит — всё решает сервер.
 import type { Alert } from './alerts';
-import type { Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, SignalKind, ThoughtKind, TraitKind } from './defs';
+import type { AimKind, Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, SignalKind, ThoughtKind, TraitKind } from './defs';
 import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry, SurfaceActor, WorkPriority } from './state';
 
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;
 
 export type Command =
   | { c: 'move'; x: number; y: number }
   | { c: 'stop' }
   | { c: 'target'; id: number | null }
   | { c: 'mineResource'; resource: Resource | null }
+  /** Куда целиться: корпус или система врага. */
+  | { c: 'aim'; aim: AimKind }
   | { c: 'build'; x: number; y: number; kind: BuildKind }
   | { c: 'remove'; x: number; y: number }
   | { c: 'urgent'; x: number; y: number }
@@ -116,6 +118,7 @@ export interface OwnShipView {
   moveTarget: { x: number; y: number } | null;
   targetId: number | null;
   mineResource: Resource | null;
+  aim: AimKind;
   res: Resources;
   modules: ModuleView[];
   blueprints: { id: number; x: number; y: number; kind: BuildKind; remove: boolean; progress: number; ready: boolean }[];
@@ -183,6 +186,8 @@ export type Contact =
       hp: number;
       shield: number;
       hostile: boolean;
+      /** Системы: [оружие, двигатели, щиты] — доля прочности 0..1; 0 — выбита. */
+      sub: [number, number, number];
     }
   | {
       k: 'asteroid';

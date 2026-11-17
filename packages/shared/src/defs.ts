@@ -1232,3 +1232,44 @@ export const MOOD_BREAK_SECONDS = 40;
 export const MOOD_BREAK_RELIEF = 25;
 /** Сколько секунд команда переживает смерть на борту. */
 export const GRIEF_SECONDS = 240;
+
+// ---------- Прицельный огонь (как в FTL: бить не только по корпусу, но и по системам врага) ----------
+
+export type AimKind = 'hull' | 'weapons' | 'engines' | 'shields';
+export type SubsystemKind = Exclude<AimKind, 'hull'>;
+
+export const AIM_KINDS: AimKind[] = ['hull', 'weapons', 'engines', 'shields'];
+export const SUBSYSTEM_KINDS: SubsystemKind[] = ['weapons', 'engines', 'shields'];
+
+export const AIM_NAMES: Record<AimKind, string> = { hull: 'Корпус', weapons: 'Оружие', engines: 'Двигатели', shields: 'Щиты' };
+export const AIM_HINTS: Record<AimKind, string> = {
+  hull: 'Весь урон идёт в корпус — быстрее всего уничтожает цель.',
+  weapons: 'Выбитое оружие не стреляет, пока враг его не починит.',
+  engines: 'С выбитыми двигателями враг едва ползёт — можно уйти или держать дистанцию.',
+  shields: 'Выбитые щиты падают в ноль и не восстанавливаются.',
+};
+
+export const AIM_DOWN_TEXT: Record<SubsystemKind, string> = {
+  weapons: 'оружие выведено из строя',
+  engines: 'двигатели выведены из строя',
+  shields: 'щиты выведены из строя',
+};
+
+/** Доля прошедшего щит урона, которая при прицельном огне идёт в систему (остальное — в корпус). */
+export const AIM_SUB_SHARE = 0.7;
+/** Прицельный выстрел лазера попадает реже. */
+export const AIM_ACCURACY = 0.85;
+/** Прочность каждой системы врага — доля от прочности его корпуса. */
+export const NPC_SUB_HP_FRAC = 0.35;
+/** На сколько секунд выбитая система выходит из строя (потом Машины её чинят). */
+export const NPC_SUB_DOWN_SECONDS = 20;
+/** Скорость врага с выбитыми двигателями. */
+export const NPC_ENGINE_DOWN_SPEED = 0.25;
+/** По каким модулям корабля игрока бьёт прицел. */
+export const AIM_MODULES: Record<SubsystemKind, ModuleType[]> = {
+  weapons: ['laser', 'missile'],
+  engines: ['engine'],
+  shields: ['shield_gen'],
+};
+/** Множитель урона по модулю при прицельном попадании (как и при случайном). */
+export const AIM_MODULE_DAMAGE = 1.5;

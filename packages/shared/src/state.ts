@@ -1,5 +1,5 @@
 // Состояние мира на сервере. Только простые данные (без классов), чтобы всё легко сохранялось в JSON.
-import type { Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, SignalKind, Tile, TraitKind } from './defs';
+import type { AimKind, SubsystemKind, Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, SignalKind, Tile, TraitKind } from './defs';
 
 export interface Vec {
   x: number;
@@ -145,6 +145,8 @@ export interface Ship {
   urgent: string[];
   /** Какой ресурс добывать из астероида (null — любой). */
   mineResource: Resource | null;
+  /** Куда целятся орудия: корпус или система врага. */
+  aim: AimKind;
   /** Накопитель добычи бура. */
   mineProgress: number;
   res: Resources;
@@ -188,6 +190,8 @@ export interface Npc {
   cooldown: number;
   targetShipId: number | null;
   wander: Vec;
+  /** Системы врага: запас прочности и сколько секунд система ещё выбита. Нет поля — системы целы (старые сохранения). */
+  sub?: Record<SubsystemKind, { hp: number; down: number }>;
 }
 
 export interface Asteroid {
@@ -280,6 +284,8 @@ export interface Projectile {
   /** id корабля игрока, либо -id NPC. */
   ownerShipId: number;
   life: number;
+  /** Куда целились при пуске (для ракет игрока). */
+  aim?: AimKind;
 }
 
 /** Ресурсная точка на поверхности планеты. */

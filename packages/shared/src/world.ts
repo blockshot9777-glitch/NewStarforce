@@ -39,6 +39,18 @@ import {
   SIGNAL_SPAWN_CHANCE,
   SIGNAL_SURVIVOR_REWARD,
   SIGNAL_TTL_SECONDS,
+  AIM_ACCURACY,
+  AIM_KINDS,
+  AIM_MODULES,
+  AIM_MODULE_DAMAGE,
+  AIM_DOWN_TEXT,
+  AIM_SUB_SHARE,
+  NPC_ENGINE_DOWN_SPEED,
+  NPC_SUB_DOWN_SECONDS,
+  NPC_SUB_HP_FRAC,
+  SUBSYSTEM_KINDS,
+  type AimKind,
+  type SubsystemKind,
   STAR_SYSTEMS,
   TICK_RATE,
   TILE_CHARS,
@@ -210,6 +222,7 @@ export class World {
       normalizeTemp(ship);
       ship.stats.rates ??= {};
       ship.grief ??= 0;
+      if (!AIM_KINDS.includes(ship.aim)) ship.aim = 'hull';
       for (const c of ship.crew) {
         normalizePriorities(c);
         normalizeMind(c);
@@ -739,22 +752,23 @@ export class World {
           kind: 'missile',
           ownerShipId: ship.id,
           life: 8,
+          aim: ship.aim,
         });
       } else {
         const evasive = t.k === 'ship' && t.ship.stats.piloted && Math.hypot(t.ship.vx, t.ship.vy) > 10;
-        const hit = this.rng.chance(evasive ? 0.75 : 0.9);
+        const hit = this.rng.chance((evasive ? 0.75 : 0.9) * (ship.aim === 'hull' ? 1 : AIM_ACCURACY));
         const miss = hit ? { x: 0, y: 0 } : { x: this.rng.range(-40, 40), y: this.rng.range(-40, 40) };
         sys.fx.push({ k: 'laser', x1: origin.x, y1: origin.y, x2: t.x + miss.x, y2: t.y + miss.y, hostile: false });
         if (hit) {
-          if (t.k === 'npc') this.damageNpc(sys, t.npc, w.damage, w.pierce, ship);
-          else this.damageShip(sys, t.ship, w.damage, w.pierce, ship);
+          if (t.k === 'npc') this.damageNpc(sys, t.npc, w.damage, w.pierce, ship, ship.aim);
+          else this.damageShip(sys, t.ship, w.damage, w.pierce, ship, ship.aim);
         }
       }
     }
   }
 
   /** Урон кораблю игрока: щит → корпус → модули, экипаж, пробоины. */
-  damageShip(sys: StarSystem, ship: Ship, damage: number, pierce: number, attacker: Ship | null): void {
+  damageShip(sys: StarSystem, ship: Ship, damage: number, pierce: number, attacker: Ship | null, aim: AimKind = 'hull'): void {
     const owner = this.ownerOf(ship);
     ship.lastCombatTick = this.state.tick;
     let toShield = damage * (1 - pierce);
@@ -765,8 +779,19 @@ export class World {
     through += toShield;
     sys.fx.push({ k: 'hit', x: ship.x + this.rng.range(-15, 15), y: ship.y + this.rng.range(-15, 15), shield: through <= 0 });
     if (through <= 0) return;
+    // Прицельный огонь: большая часть урона идёт в модули выбранной системы, корпусу достаётся остаток.
+    const aimed = aim === 'hull' ? [] : ship.modules.filter((m) => AIM_MODULES[aim].includes(m.type) && m.hp > 0);
+    if (aimed.length) {
+      const m = this.rng.pick(aimed);
+      m.hp = Math.max(0, m.hp - through * AIM_SUB_SHARE * AIM_MODULE_DAMAGE);
+      if (m.hp <= 0) {
+        this.log(owner, `Прицельный огонь: модуль «${MODULES[m.type].name}» выведен из строя!`, 'bad');
+        if (this.rng.chance(0.4)) igniteTile(ship, m.x, m.y, 0.5);
+      }
+      through *= 1 - AIM_SUB_SHARE;
+    }
     ship.hp -= through;
-    if (this.rng.chance(0.35) && ship.modules.length) {
+    if (!aimed.length && this.rng.chance(0.35) && ship.modules.length) {
       const m = this.rng.pick(ship.modules);
       const wasAlive = m.hp > 0;
       m.hp = Math.max(0, m.hp - through * 1.5);
@@ -789,7 +814,24 @@ export class World {
     }
   }
 
-  private damageNpc(sys: StarSystem, npc: Npc, damage: number, pierce: number, attacker: Ship | null): void {
+  /** Доли прочности систем врага для снимка: [оружие, двигатели, щиты]; 0 — выбита. */
+  private subView(n: Npc): [number, number, number] {
+    const max = NPCS[n.type].maxHp * NPC_SUB_HP_FRAC;
+    const sub = this.npcSub(n);
+    const f = (k: SubsystemKind) => (sub[k].down > 0 ? 0 : Math.max(0.01, Math.round((sub[k].hp / max) * 100) / 100));
+    return [f('weapons'), f('engines'), f('shields')];
+  }
+
+  /** Системы врага (создаются при первом обращении — у старых сохранений их нет). */
+  npcSub(npc: Npc): NonNullable<Npc['sub']> {
+    if (!npc.sub) {
+      const hp = NPCS[npc.type].maxHp * NPC_SUB_HP_FRAC;
+      npc.sub = { weapons: { hp, down: 0 }, engines: { hp, down: 0 }, shields: { hp, down: 0 } };
+    }
+    return npc.sub;
+  }
+
+  private damageNpc(sys: StarSystem, npc: Npc, damage: number, pierce: number, attacker: Ship | null, aim: AimKind = 'hull'): void {
     let toShield = damage * (1 - pierce);
     let through = damage * pierce;
     const absorbed = Math.min(npc.shield, toShield);
@@ -797,6 +839,22 @@ export class World {
     toShield -= absorbed;
     through += toShield;
     sys.fx.push({ k: 'hit', x: npc.x, y: npc.y, shield: through <= 0 });
+    // Прицельный огонь: часть урона уходит в систему. Уже выбитую систему добивать незачем — весь урон в корпус.
+    if (aim !== 'hull' && through > 0) {
+      const sub = this.npcSub(npc)[aim];
+      if (sub.down <= 0) {
+        // В систему уходит не больше, чем в ней осталось прочности: излишек достаётся корпусу.
+        const taken = Math.min(sub.hp, through * AIM_SUB_SHARE);
+        sub.hp -= taken;
+        through -= taken;
+        if (sub.hp <= 1e-9) {
+          sub.hp = 0;
+          sub.down = NPC_SUB_DOWN_SECONDS;
+          if (aim === 'shields') npc.shield = 0;
+          if (attacker) this.log(this.ownerOf(attacker), `${NPCS[npc.type].name}: ${AIM_DOWN_TEXT[aim]} на ${NPC_SUB_DOWN_SECONDS} с.`, 'good');
+        }
+      }
+    }
     npc.hp -= through;
     if (attacker && npc.targetShipId === null && !this.inSafeZone(sys, attacker)) npc.targetShipId = attacker.id;
     if (npc.hp > 0) return;
@@ -859,7 +917,18 @@ export class World {
     const ships = this.activeShips(sys.id);
     for (const npc of [...sys.npcs]) {
       const def = NPCS[npc.type];
-      npc.shield = Math.min(def.maxShield, npc.shield + def.shieldRegen * dt);
+      // Выбитые системы: отсчёт до починки.
+      const sub = this.npcSub(npc);
+      for (const k of SUBSYSTEM_KINDS) {
+        if (sub[k].down <= 0) continue;
+        sub[k].down -= dt;
+        if (sub[k].down <= 0) {
+          sub[k].down = 0;
+          sub[k].hp = def.maxHp * NPC_SUB_HP_FRAC;
+        }
+      }
+      const speed = def.speed * (sub.engines.down > 0 ? NPC_ENGINE_DOWN_SPEED : 1);
+      if (sub.shields.down <= 0) npc.shield = Math.min(def.maxShield, npc.shield + def.shieldRegen * dt);
       npc.cooldown = Math.max(0, npc.cooldown - dt);
       let target = npc.targetShipId !== null ? ships.find((s) => s.id === npc.targetShipId) : undefined;
       if (target && (this.inSafeZone(sys, target) || dist(target, npc) > def.aggroRange * 1.8)) target = undefined;
@@ -883,7 +952,7 @@ export class World {
         const uy = (target.y - npc.y) / d;
         const keep = def.weapon.range * 0.7;
         // Сближаемся до дистанции стрельбы, дальше кружим вокруг цели.
-        desired = d > keep ? { x: ux * def.speed, y: uy * def.speed } : { x: -uy * def.speed * 0.6, y: ux * def.speed * 0.6 };
+        desired = d > keep ? { x: ux * speed, y: uy * speed } : { x: -uy * speed * 0.6, y: ux * speed * 0.6 };
         npc.heading = Math.atan2(uy, ux);
       } else {
         if (dist(npc.wander, npc) < 40) {
@@ -893,14 +962,14 @@ export class World {
           npc.wander = { x: Math.max(-lim, Math.min(lim, p.x)), y: Math.max(-lim, Math.min(lim, p.y)) };
         }
         const d = dist(npc.wander, npc) || 1;
-        desired = { x: ((npc.wander.x - npc.x) / d) * def.speed * 0.4, y: ((npc.wander.y - npc.y) / d) * def.speed * 0.4 };
+        desired = { x: ((npc.wander.x - npc.x) / d) * speed * 0.4, y: ((npc.wander.y - npc.y) / d) * speed * 0.4 };
         npc.heading = Math.atan2(desired.y, desired.x);
       }
       // Враги не заходят в безопасную зону станций.
       for (const st of sys.stations) {
         const d = dist(st, npc);
         if (d < SAFE_ZONE_RADIUS + 100) {
-          desired = { x: ((npc.x - st.x) / (d || 1)) * def.speed, y: ((npc.y - st.y) / (d || 1)) * def.speed };
+          desired = { x: ((npc.x - st.x) / (d || 1)) * speed, y: ((npc.y - st.y) / (d || 1)) * speed };
           npc.wander = { x: npc.x + desired.x * 10, y: npc.y + desired.y * 10 };
         }
       }
@@ -910,7 +979,7 @@ export class World {
       npc.x += npc.vx * dt;
       npc.y += npc.vy * dt;
 
-      if (target && npc.cooldown <= 0 && dist(target, npc) <= def.weapon.range + shipRadius(target)) {
+      if (target && sub.weapons.down <= 0 && npc.cooldown <= 0 && dist(target, npc) <= def.weapon.range + shipRadius(target)) {
         npc.cooldown = def.weapon.cooldown;
         if (def.weapon.fx === 'spore') {
           const d = dist(target, npc) || 1;
@@ -958,8 +1027,8 @@ export class World {
       if (dist(t, p) < t.r * 0.8) {
         sys.projectiles = sys.projectiles.filter((o) => o !== p);
         const attacker = p.ownerShipId > 0 ? this.state.ships.find((s) => s.id === p.ownerShipId) ?? null : null;
-        if (t.k === 'ship') this.damageShip(sys, t.ship, p.damage, p.pierce, attacker);
-        else this.damageNpc(sys, t.npc, p.damage, p.pierce, attacker);
+        if (t.k === 'ship') this.damageShip(sys, t.ship, p.damage, p.pierce, attacker, p.aim ?? 'hull');
+        else this.damageNpc(sys, t.npc, p.damage, p.pierce, attacker, p.aim ?? 'hull');
       }
     }
   }
@@ -1170,6 +1239,10 @@ export class World {
         if (cmd.id === ship.id) return 'Нельзя выбрать себя';
         if (!this.findTarget(sys, cmd.id)) return 'Цель не найдена';
         ship.targetId = cmd.id;
+        return null;
+      case 'aim':
+        if (typeof cmd.aim !== 'string' || !AIM_KINDS.includes(cmd.aim)) return 'Нет такой цели для прицела';
+        ship.aim = cmd.aim;
         return null;
       case 'mineResource':
         if (cmd.resource !== null && !RESOURCES.includes(cmd.resource)) return 'Нет такого ресурса';
@@ -1403,6 +1476,7 @@ export class World {
       moveTarget: ship.moveTarget,
       targetId: ship.targetId,
       mineResource: ship.mineResource,
+      aim: ship.aim,
       res: { ...ship.res },
       modules: ship.modules.map((m) => ({
         id: m.id,
@@ -1530,7 +1604,7 @@ export class World {
     }
     for (const n of sys.npcs) {
       if (!visible(n, 50)) continue;
-      contacts.push({ k: 'npc', id: n.id, type: n.type, x: n.x, y: n.y, vx: n.vx, vy: n.vy, heading: n.heading, hp: n.hp, shield: n.shield, hostile: n.targetShipId !== null });
+      contacts.push({ k: 'npc', id: n.id, type: n.type, x: n.x, y: n.y, vx: n.vx, vy: n.vy, heading: n.heading, hp: n.hp, shield: n.shield, hostile: n.targetShipId !== null, sub: this.subView(n) });
     }
     for (const a of sys.asteroids) {
       if (!visible(a, a.r)) continue;

@@ -1,5 +1,5 @@
 import './style.css';
-import { RESOURCE_NAMES, buildCost, isModuleType, moduleSize, validateBuild, type BuildKind, type Resource, type Ship } from '@starforce/shared';
+import { AIM_KINDS, AIM_NAMES, RESOURCE_NAMES, buildCost, isModuleType, moduleSize, validateBuild, type BuildKind, type Resource, type Ship } from '@starforce/shared';
 import { connect, savedName, send } from './net';
 import { kenneyEnabled, loadKenney } from './render/kenney';
 import { loadSprites } from './render/modules';
@@ -324,6 +324,17 @@ function onKey(e: KeyboardEvent): void {
     case 'ь':
     case 'Ь':
       toast(toggleMute() ? 'Звук выключен (M)' : 'Звук включён (M)');
+      break;
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+      // Прицел орудий: 1 корпус, 2 оружие, 3 двигатели, 4 щиты.
+      if (store.mode !== 'planet' && store.snap?.ship) {
+        const aim = AIM_KINDS[Number(e.key) - 1];
+        send({ c: 'aim', aim });
+        toast(`Прицел: ${AIM_NAMES[aim]}`);
+      }
       break;
     case 'Tab':
     case ' ':

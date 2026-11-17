@@ -393,7 +393,7 @@ describe('мир', () => {
 
   it('мусорные команды не роняют сервер', () => {
     const { w, p } = newWorld();
-    const junk: unknown[] = [null, 5, 'x', {}, { c: 1 }, { c: 'move', x: 'a' }, { c: 'build', x: 1.5, y: 2, kind: 'floor' }, { c: 'build', x: 1, y: 1, kind: '__proto__' }, { c: 'target', id: {} }, { c: 'jump', systemId: 99 }, { c: 'nope' }, { c: 'setPriority', crewId: 1.5, kind: 'build', value: 1 }, { c: 'setPriority', crewId: 1, kind: 5, value: 1 }, { c: 'stockpile', x: 1.5, y: 0, on: true }, { c: 'order', crewId: 1.5, x: 0, y: 0 }, { c: 'draft', crewId: 1, on: 1 }, { c: 'clearOrder', crewId: null }, { c: 'signal', id: 'x', option: 0 }, { c: 'signal', id: 1, option: 1.5 }, { c: 'signal', id: 999999, option: 0 }];
+    const junk: unknown[] = [null, 5, 'x', {}, { c: 1 }, { c: 'move', x: 'a' }, { c: 'build', x: 1.5, y: 2, kind: 'floor' }, { c: 'build', x: 1, y: 1, kind: '__proto__' }, { c: 'target', id: {} }, { c: 'jump', systemId: 99 }, { c: 'nope' }, { c: 'setPriority', crewId: 1.5, kind: 'build', value: 1 }, { c: 'setPriority', crewId: 1, kind: 5, value: 1 }, { c: 'stockpile', x: 1.5, y: 0, on: true }, { c: 'order', crewId: 1.5, x: 0, y: 0 }, { c: 'draft', crewId: 1, on: 1 }, { c: 'clearOrder', crewId: null }, { c: 'aim', aim: 'nope' }, { c: 'aim', aim: 1 }, { c: 'signal', id: 'x', option: 0 }, { c: 'signal', id: 1, option: 1.5 }, { c: 'signal', id: 999999, option: 0 }];
     for (const j of junk) expect(typeof w.command(p.id, j)).toBe('string');
     stepSeconds(w, 1);
   });

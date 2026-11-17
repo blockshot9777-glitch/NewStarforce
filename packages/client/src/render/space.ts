@@ -731,6 +731,19 @@ function drawNpc(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'npc' }
     ctx.stroke();
   }
   bar(ctx, p.x, p.y - r * 1.6 - 6, 34, c.hp / def.maxHp, c.hostile ? '#ff1744' : '#ffab40');
+  // Системы врага: три метки под полоской корпуса (оружие, двигатели, щиты). Выбитая мигает красным и искрит.
+  if (c.sub.some((f) => f < 1)) {
+    const y = p.y - r * 1.6;
+    c.sub.forEach((f, i) => {
+      const x = p.x - 12 + i * 12;
+      const down = f <= 0;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(x - 5, y, 10, 4);
+      ctx.fillStyle = down ? (Math.sin(t * 10) > 0 ? '#ff1744' : '#5a0a14') : f < 0.4 ? '#ffab40' : '#80deea';
+      ctx.fillRect(x - 5, y, down ? 10 : 10 * f, 4);
+    });
+    if (c.sub.some((f) => f <= 0) && Math.random() < 0.25) impact(pos.x + (Math.random() - 0.5) * def.radius, pos.y + (Math.random() - 0.5) * def.radius, false);
+  }
 }
 
 function drawFx(ctx: CanvasRenderingContext2D, S: ToScreen, z: number): void {

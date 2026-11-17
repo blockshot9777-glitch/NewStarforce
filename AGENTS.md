@@ -95,7 +95,11 @@ npm start          # сборка клиента + сервер на :8787
    работу и ходьбу — `workSpeed`/`moveAlong` в `crew.ts`; поля `mood/trait/thoughts/breakdown` в `CrewView`;
    тревоги `break:`/`mood:` в `alerts.ts`; показ — `renderCrew`, `pawnCard`, `renderTooltip` в `ui.ts`.
    Тесты — `mood.test.ts`. **Новая мысль или черта = запись в `THOUGHTS`/`TRAITS`** (+ условие в `crewThoughts`).
-10. Далее — `docs/ROADMAP.md`, фазы 3–4.
+10. **Прицельный огонь — сделано.** Прицел `Ship.aim` (корпус/оружие/двигатели/щиты), команда `aim`; системы
+    врага `Npc.sub` и их починка — `npcSub`, `damageNpc`, `updateNpcs` в `world.ts`; по кораблям игроков прицел
+    бьёт в модули (`AIM_MODULES`, `damageShip`); баланс — `AIM_*`, `NPC_SUB_*` в `defs.ts`; в снимке — `aim` и
+    `sub` у контакта `npc`; выбор — `aimPanel` в `ui.ts`, клавиши 1–4, метки систем — `drawNpc`. Тесты — `aim.test.ts`.
+11. Далее — `docs/ROADMAP.md`, фазы 3–4.
 
 ## Арт
 

@@ -1,5 +1,8 @@
 // HTML-интерфейс поверх холста: ресурсы, строительство, команда, цели, торговля, экспедиции, прыжки, чат.
 import {
+  AIM_HINTS,
+  AIM_KINDS,
+  AIM_NAMES,
   BIOMES,
   BUY_MARKUP,
   CATEGORY_NAMES,
@@ -22,6 +25,7 @@ import {
   STRUCTURE_COST,
   STRUCTURE_WORK,
   systemDistance,
+  type AimKind,
   type BuildCategory,
   type BuildKind,
   type JobKind,
@@ -244,6 +248,9 @@ function handleAction(el: HTMLElement): void {
       }
       break;
     }
+    case 'aim':
+      send({ c: 'aim', aim: el.dataset.aim as AimKind });
+      break;
     case 'mine': {
       const res = el.dataset.res === 'any' ? null : (el.dataset.res as Resource);
       send({ c: 'mineResource', resource: res });
@@ -622,11 +629,13 @@ function selectionPanel(own: OwnShipView, c: Contact): string {
     case 'npc': {
       const def = NPCS[c.type];
       lines.push(`<div>${def.faction === 'machines' ? 'Машины' : 'Живая флора'} · корпус ${Math.round(c.hp)}/${def.maxHp}</div>`);
+      lines.push(aimPanel(own, c.sub));
       actions.push(isTarget ? `<button data-act="untarget">Прекратить огонь</button>` : `<button data-act="target" data-id="${c.id}" class="danger">⚔ Атаковать</button>`);
       break;
     }
     case 'ship':
       lines.push(`<div>Капитан: ${esc(c.owner)} · ${HULLS[c.hull].name}</div><div>Корпус ${Math.round(c.hp)}/${c.maxHp}</div>`);
+      lines.push(aimPanel(own, null));
       actions.push(isTarget ? `<button data-act="untarget">Прекратить огонь</button>` : `<button data-act="target" data-id="${c.id}" class="danger" title="Вне безопасных зон">⚔ Атаковать игрока</button>`);
       break;
     case 'loot':
@@ -643,6 +652,16 @@ function selectionPanel(own: OwnShipView, c: Contact): string {
       break;
   }
   return `<div class="card">${lines.join('')}<div class="actions">${actions.join('')}</div></div>`;
+}
+
+/** Выбор прицела (как в FTL): корпус или система врага. sub — состояние систем цели, если оно известно. */
+function aimPanel(own: OwnShipView, sub: [number, number, number] | null): string {
+  const chips = AIM_KINDS.map((k, i) => {
+    const frac = sub && i > 0 ? sub[i - 1] : null;
+    const state = frac === null ? '' : frac <= 0 ? '<span class="aim-down">выбито</span>' : bar(frac * 100, frac < 0.4 ? '#ffab40' : '#80deea');
+    return `<button class="aim ${own.aim === k ? 'on' : ''}" data-act="aim" data-aim="${k}" title="${esc(AIM_HINTS[k])}"><span>${i + 1} · ${AIM_NAMES[k]}</span>${state}</button>`;
+  }).join('');
+  return `<div class="sub">Целиться в:</div><div class="aim-row">${chips}</div><div class="hint">${esc(AIM_HINTS[own.aim])}</div>`;
 }
 
 function marketPanel(own: OwnShipView): string {
