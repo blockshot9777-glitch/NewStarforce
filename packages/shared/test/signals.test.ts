@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   HULLS,
+  NPCS,
+  RESOURCES,
   SIGNALS,
+  SIGNAL_KINDS,
   SIGNAL_IDENT_RANGE,
   SIGNAL_MAX_PER_SYSTEM,
   SIGNAL_RANGE,
@@ -9,6 +12,7 @@ import {
   SIGNAL_TTL_SECONDS,
   TICK_RATE,
   World,
+  makeModule,
   newClientCache,
   randomCrew,
   placeCrewOnBoard,
@@ -192,6 +196,41 @@ describe('сигналы в космосе', () => {
     const old = JSON.parse(w.toJSON());
     for (const s of old.systems) delete s.signals;
     expect(World.fromJSON(JSON.stringify(old)).state.systems[0].signals).toEqual([]);
+  });
+
+  it('всё содержимое событий корректно: каждый вариант каждого сигнала разыгрывается без ошибок', () => {
+    for (const kind of SIGNAL_KINDS) {
+      const def = SIGNALS[kind];
+      expect(def.name.length).toBeGreaterThan(0);
+      expect(def.weight).toBeGreaterThan(0);
+      expect(def.options.length).toBeGreaterThan(0);
+      def.options.forEach((opt, i) => {
+        for (const cost of Object.keys(opt.cost ?? {})) expect(RESOURCES).toContain(cost);
+        for (const o of opt.outcomes) {
+          expect(o.weight).toBeGreaterThan(0);
+          expect(o.text.length).toBeGreaterThan(0);
+          for (const r of Object.keys(o.gain ?? {})) expect(RESOURCES).toContain(r);
+          for (const t of Object.keys(o.ambush ?? {})) expect(Object.keys(NPCS)).toContain(t);
+        }
+        // Разыгрываем вариант на нескольких мирах: должен приниматься, убирать сигнал и не ломать числа.
+        for (let seed = 1; seed <= 12; seed++) {
+          const { w, p, ship, sys, signal } = setup(kind, seed);
+          ship.res.credits = 1000;
+          for (const r of ['food', 'water', 'metal'] as const) setStored(ship, r, 200, w.nextId);
+          if (opt.needsRadar) {
+            // Вариант требует радара: ставим запитанный.
+            const radar = makeModule(w.nextId(), 'radar', 1, 1);
+            radar.powered = true;
+            ship.modules.push(radar);
+          }
+          expect(w.command(p.id, { c: 'signal', id: signal.id, option: i })).toBe(null);
+          expect(sys.signals).toHaveLength(0);
+          expect(p.inbox.some((l) => l.text.startsWith(`${def.name}:`))).toBe(true);
+          for (let t = 0; t < 20; t++) w.step();
+          for (const v of [ship.hp, ship.shield, ...Object.values(ship.res)]) expect(Number.isFinite(v)).toBe(true);
+        }
+      });
+    }
   });
 
   it('сигнал, к которому никто не прилетел, со временем затухает', () => {

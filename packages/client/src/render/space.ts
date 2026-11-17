@@ -595,7 +595,9 @@ function drawAsteroid(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'a
   ctx.restore();
 }
 
-const SIGNAL_COLOR: Record<string, string> = { wreck: '#b0bec5', distress: '#ff5252', trader: '#69f0ae', anomaly: '#ea80fc', unknown: '#ffd740' };
+const SIGNAL_COLORS: Record<string, string> = { wreck: '#b0bec5', distress: '#ff5252', trader: '#69f0ae', anomaly: '#ea80fc', beacon: '#ff8a65', spores: '#aeea00', station: '#80deea' };
+/** Цвет сигнала; неопознанный и новые виды без своего цвета — жёлтые. */
+const signalColor = (kind: string | null) => (kind && SIGNAL_COLORS[kind]) || '#ffd740';
 
 /**
  * Сигнал: маяк постоянного экранного размера (виден при любом масштабе) с расходящимися кольцами.
@@ -603,7 +605,7 @@ const SIGNAL_COLOR: Record<string, string> = { wreck: '#b0bec5', distress: '#ff5
  */
 function drawSignal(ctx: CanvasRenderingContext2D, c: Extract<Contact, { k: 'signal' }>, S: ToScreen, W: number, H: number, t: number): void {
   const p = S(c.x, c.y);
-  const color = SIGNAL_COLOR[c.kind ?? 'unknown'];
+  const color = signalColor(c.kind);
   const name = c.kind ? SIGNALS[c.kind].name : 'Сигнал ?';
   const left = 20;
   const top = 90;
@@ -912,7 +914,7 @@ export function drawMinimap(ctx: CanvasRenderingContext2D, x: number, y: number,
       ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
     } else if (c.k === 'signal') {
       // Сигнал на карте мигает — его видно через всю систему.
-      ctx.fillStyle = SIGNAL_COLOR[c.kind ?? 'unknown'];
+      ctx.fillStyle = signalColor(c.kind);
       ctx.globalAlpha = 0.55 + 0.45 * Math.sin(performance.now() / 250);
       ctx.save();
       ctx.translate(p.x, p.y);

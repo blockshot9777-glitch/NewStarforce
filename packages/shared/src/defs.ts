@@ -987,7 +987,7 @@ export function systemDistance(a: number, b: number): number {
 // Сигнал — точка интереса в системе. Радиосигнал слышен по всей системе, но что это — видно только вблизи
 // (или с радаром). Подлетев, игрок выбирает вариант; исход случаен (по весам) и решается на сервере.
 
-export type SignalKind = 'wreck' | 'distress' | 'trader' | 'anomaly';
+export type SignalKind = 'wreck' | 'distress' | 'trader' | 'anomaly' | 'beacon' | 'spores' | 'station';
 
 export interface SignalOutcome {
   /** Вес исхода среди исходов варианта. */
@@ -1130,6 +1130,76 @@ export const SIGNALS: Record<SignalKind, SignalDef> = {
         hint: 'Безопасно. Данные охотно купят на станции.',
         needsRadar: true,
         outcomes: [{ weight: 1, text: 'Радар записал структуру аномалии. За такие данные хорошо платят.', level: 'good', gain: { crystals: 5, credits: 70 } }],
+      },
+    ],
+  },
+  beacon: {
+    name: 'Маяк Машин',
+    text: 'Сторожевой маяк Машин сканирует пространство. Пока он работает, патрули знают, где вы.',
+    weight: 2,
+    options: [
+      {
+        label: 'Взломать маяк',
+        hint: 'Радар перехватит его память. Если защита сработает — прилетит патруль.',
+        needsRadar: true,
+        outcomes: [
+          { weight: 70, text: 'Карты патрулей Машин у вас. Такие данные стоят дорого.', level: 'good', gain: { credits: 120, crystals: 6 } },
+          { weight: 30, text: 'Защита маяка сработала — патруль уже здесь!', level: 'bad', ambush: { drone: 2 } },
+        ],
+      },
+      {
+        label: 'Расстрелять маяк',
+        hint: 'Просто и шумно. Обломки пригодятся.',
+        outcomes: [
+          { weight: 50, text: 'Маяк разлетается на куски. Патрули ослепли.', level: 'good', gain: { metal: 25, crystals: 4 } },
+          { weight: 50, text: 'Перед гибелью маяк успел позвать на помощь.', level: 'warn', gain: { metal: 15 }, ambush: { drone: 1 } },
+        ],
+      },
+    ],
+  },
+  spores: {
+    name: 'Споровое облако',
+    text: 'Облако живой пыльцы дрейфует в пустоте и тянется к теплу двигателей. Флора добралась и сюда.',
+    weight: 2,
+    options: [
+      {
+        label: 'Собрать образцы',
+        hint: 'Биомасса нужна гидропонике. Но облако живое.',
+        outcomes: [
+          { weight: 60, text: 'Контейнеры полны живой биомассы.', level: 'good', gain: { biomass: 30 } },
+          { weight: 25, text: 'Споры разъели эмиттеры — щит погас. Часть образцов всё же собрана.', level: 'warn', gain: { biomass: 15 }, drainShield: true },
+          { weight: 15, text: 'В облаке прятался спорокаст!', level: 'bad', ambush: { sporecaster: 1 } },
+        ],
+      },
+      {
+        label: 'Выжечь облако',
+        hint: 'Потратить немного металла на заряд. Колонии платят за чистый космос.',
+        cost: { metal: 5 },
+        outcomes: [{ weight: 1, text: 'Облако сгорает. Ближайшая колония переводит награду.', level: 'good', gain: { credits: 70 } }],
+      },
+    ],
+  },
+  station: {
+    name: 'Заброшенная станция',
+    text: 'Станция без огней медленно вращается. Шлюз открыт, внутри темно и тихо.',
+    weight: 2,
+    options: [
+      {
+        label: 'Обыскать склады',
+        hint: 'Припасы могли уцелеть. Конструкции — нет.',
+        outcomes: [
+          { weight: 50, text: 'На складах нашлись запечатанные припасы.', level: 'good', gain: { food: 25, water: 25, metal: 20 } },
+          { weight: 30, text: 'В сейфе начальника станции — кредитные чипы и кристаллы.', level: 'good', gain: { credits: 150, crystals: 5 } },
+          { weight: 20, text: 'Перекрытие рухнуло и ударило по корпусу при отстыковке.', level: 'bad', damage: 25 },
+        ],
+      },
+      {
+        label: 'Снять реакторные стержни',
+        hint: 'Кристаллы высшей пробы. Демонтаж без инструкции — риск.',
+        outcomes: [
+          { weight: 60, text: 'Стержни сняты целыми.', level: 'good', gain: { crystals: 14 } },
+          { weight: 40, text: 'Один стержень треснул при демонтаже — выброс задел корпус.', level: 'bad', gain: { crystals: 6 }, damage: 20 },
+        ],
       },
     ],
   },
