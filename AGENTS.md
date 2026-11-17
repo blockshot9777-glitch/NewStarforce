@@ -83,8 +83,10 @@ npm start          # сборка клиента + сервер на :8787
 7. **Поверхность планет — сделано.** Генерация карты, ИИ команды и хищников — `surface.ts`
    (`generateSurface`, `stepSurface`, `orderSurfaceMove`, `toggleSurfaceMark`); данные биомов и существ —
    `SURFACE_BIOMES`, `CREATURES` в `defs.ts`; команды `expedition`/`recall`/`landMove`/`landMark` в
-   `World.command`; отрисовка — `render/planet.ts`, режим `planet` в `main.ts`/`ui.ts`. Нужды экипажа на
-   планете пока заморожены (еда/сон не тратятся) — это упрощение, а не ошибка. Тесты — `surface.test.ts`.
+   `World.command`; отрисовка — `render/planet.ts`, режим `planet` в `main.ts`/`ui.ts`. Нужды на планете
+   работают: сытость и силы уходят, люди едят из добытого, биом добавляет опасность (`SURFACE_HAZARDS`,
+   `SURFACE_*` в `defs.ts`, начало цикла экипажа в `stepSurface`). Настроение на планете заморожено.
+   Тесты — `surface.test.ts`.
 8. **События в космосе — сделано.** Сигналы (обломки, бедствие, торговец, аномалия): данные и баланс — `SIGNALS`
    и `SIGNAL_*` в `defs.ts`; появление, показ и розыгрыш исхода — `spawnSignal`, `signalEvent`, `resolveSignal`
    в `world.ts`; команда `signal`; поле `event` в `OwnShipView`, контакт `signal`; карточка — `eventCard` в `ui.ts`,

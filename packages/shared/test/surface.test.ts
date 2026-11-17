@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   CREATURES,
+  FOOD_DECAY,
+  REST_DECAY,
+  SURFACE_HAZARDS,
+  SURFACE_STARVE_DAMAGE,
   Rng,
   SURFACE_BIOMES,
   TICK_RATE,
@@ -218,5 +222,89 @@ describe('поверхность: сеть и сохранения', () => {
     ];
     for (const j of junk) expect(typeof w.command(p.id, j)).toBe('string');
     steps(w, 1);
+  });
+});
+
+describe('поверхность: нужды и опасности биомов', () => {
+  it('на планете уходят сытость и силы; на морозе силы уходят быстрее, чем в мягком климате', () => {
+    const drop = (biome: string) => {
+      const { w, e } = landing(biome);
+      pacifySurface(e);
+      const c = e.crew[0];
+      c.trait = null;
+      c.food = 100;
+      c.rest = 100;
+      steps(w, 60);
+      return { food: 100 - c.food, rest: 100 - c.rest };
+    };
+    const mild = drop('terran');
+    const cold = drop('ice');
+    expect(mild.food).toBeCloseTo(FOOD_DECAY * 60, 0);
+    expect(mild.rest).toBeCloseTo(REST_DECAY * 60, 0);
+    expect(cold.rest / mild.rest).toBeCloseTo(SURFACE_HAZARDS.ice.rest, 1);
+    expect(cold.food / mild.food).toBeCloseTo(SURFACE_HAZARDS.ice.food, 1);
+  });
+
+  it('голодный ест из добытого; без еды — предупреждение один раз, потом теряет здоровье', () => {
+    const { w, p, e } = landing('terran');
+    pacifySurface(e);
+    const c = e.crew[0];
+    c.food = 10;
+    e.loot.food = 3;
+    steps(w, 1);
+    expect(c.food).toBeGreaterThan(50);
+    expect(e.loot.food).toBe(2);
+
+    e.loot.food = 0;
+    // Еду на этой планете не собираем: убираем точки, чтобы добыча не мешала проверке.
+    e.surface.nodes = [];
+    c.food = 20;
+    p.inbox = [];
+    steps(w, 30);
+    expect(p.inbox.filter((l) => l.text.includes('голодает')).length).toBe(1);
+    c.food = 0;
+    const hp = c.health;
+    steps(w, 10);
+    expect(hp - c.health).toBeCloseTo(SURFACE_STARVE_DAMAGE * 10, 0);
+  });
+
+  it('ядовитый воздух ранит вдали от шаттла, а робота и тех, кто в шаттле, не трогает', () => {
+    const { w, p, e } = landing('toxic');
+    pacifySurface(e);
+    e.surface.nodes = [];
+    const [a, b] = e.crew;
+    a.trait = b.trait = null;
+    b.robot = true;
+    const far = { x: e.surface.shuttle.x + 6, y: e.surface.shuttle.y };
+    // Ставим обоих подальше от шаттла на проходимую клетку.
+    const spot = [far, { x: far.x, y: far.y + 1 }, { x: far.x, y: far.y - 1 }, { x: far.x - 1, y: far.y }].find((v) => passableAt(e.surface, v.x, v.y))!;
+    for (const c of [a, b]) {
+      c.x = spot.x;
+      c.y = spot.y;
+      c.path = [];
+      c.health = 100;
+    }
+    steps(w, 20);
+    expect(100 - a.health).toBeCloseTo(SURFACE_HAZARDS.toxic.health * 20, 0);
+    expect(b.health).toBe(100);
+
+    // Отзываем: в шаттле яд не действует, силы восстанавливаются.
+    w.command(p.id, { c: 'recall', expeditionId: e.id });
+    const ship = w.shipOf(p)!;
+    ship.systemId = 1; // корабль «улетел» — команда ждёт в шаттле
+    steps(w, 30);
+    const hp = a.health;
+    const rest = a.rest;
+    steps(w, 10);
+    expect(a.health).toBeGreaterThanOrEqual(hp);
+    expect(a.rest).toBeGreaterThanOrEqual(rest);
+  });
+
+  it('нужды видны в снимке высадки', () => {
+    const { w, p, e } = landing('ice');
+    e.crew[0].food = 42.4;
+    e.crew[0].rest = 17.6;
+    const v = w.snapshotFor(p.id, newClientCache()).expeditions[0].surface.crew.find((c) => c.id === e.crew[0].id)!;
+    expect([v.food, v.rest]).toEqual([42, 18]);
   });
 });

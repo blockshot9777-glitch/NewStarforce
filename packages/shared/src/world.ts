@@ -1603,7 +1603,7 @@ export class World {
       creatures: s.creatures.map((c) => ({ id: c.id, type: c.type, x: r(c.x), y: r(c.y), hp: c.hp })),
       crew: e.crew.map((c) => {
         const a = s.actors.find((x) => x.crewId === c.id);
-        return { id: c.id, name: c.name, robot: c.robot, x: r(c.x), y: r(c.y), health: c.health, task: a?.task ?? 'idle' };
+        return { id: c.id, name: c.name, robot: c.robot, x: r(c.x), y: r(c.y), health: c.health, food: Math.round(c.food), rest: Math.round(c.rest), task: a?.task ?? 'idle' };
       }),
     };
   }

@@ -993,3 +993,6 @@ button.aim .mini {
   background: #ffd740;
   box-shadow: 0 0 6px #ffd740;
 }
+.bad {
+  color: var(--bad);
+}

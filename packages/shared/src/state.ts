@@ -320,6 +320,8 @@ export interface SurfaceActor {
   /** Приказ игрока «иди сюда». */
   moveTo: Vec | null;
   cooldown: number;
+  /** Игрок уже предупреждён, что этот человек голодает. */
+  warned?: boolean;
 }
 
 export interface Surface {

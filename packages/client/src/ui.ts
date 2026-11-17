@@ -21,6 +21,7 @@ import {
   RESOURCE_NAMES,
   ROBOT_COST,
   SIGNALS,
+  SURFACE_HAZARDS,
   STAR_SYSTEMS,
   STRUCTURE_COST,
   STRUCTURE_WORK,
@@ -535,9 +536,15 @@ function renderContext(own: OwnShipView | null): void {
                 ? 'возвращаются к шаттлу'
                 : `на поверхности ${Math.floor(e.surface.elapsed / 60)}:${String(Math.floor(e.surface.elapsed % 60)).padStart(2, '0')}`;
             const crew = e.surface.crew
-              .map((c) => `${c.robot ? '🤖' : ''}${esc(c.name.split(' ')[0])} <span class="${c.health < 40 ? 'warn' : 'muted'}">${Math.round(c.health)}❤ · ${SURFACE_TASKS[c.task]}</span>`)
+              .map((c) => {
+                // Нужды на планете: красным — когда пора возвращаться.
+                const needs = c.robot ? '' : ` · <span class="${c.food < 25 ? 'bad' : 'muted'}">🍞${c.food}</span> <span class="${c.rest < 15 ? 'bad' : 'muted'}">☾${c.rest}</span>`;
+                return `${c.robot ? '🤖' : ''}${esc(c.name.split(' ')[0])} <span class="${c.health < 40 ? 'warn' : 'muted'}">${Math.round(c.health)}❤ · ${SURFACE_TASKS[c.task]}</span>${needs}`;
+              })
               .join('<br>');
-            return `<div class="row"><b>${esc(e.planetName)}</b> · ${status}<br>${crew}<br>
+            const hz = SURFACE_HAZARDS[e.biome];
+            const hazard = hz.name ? `<br><span class="warn" title="${esc(hz.hint)}">☣ ${esc(hz.name)}</span> <span class="muted">${esc(hz.hint)}</span>` : '';
+            return `<div class="row"><b>${esc(e.planetName)}</b> · ${status}${hazard}<br>${crew}<br>
                <span class="muted">Добыто: ${Object.entries(e.loot).map(([k, v]) => `${RES_ICON[k as Resource]}${v}`).join(' ') || 'пока ничего'}
                · хищников: ${e.surface.creatures.length}</span>
                <div class="actions">${store.mode !== 'planet' || store.landingId !== e.id ? `<button data-act="planet" data-id="${e.id}" class="accent">🌍 На поверхность</button>` : ''}
@@ -602,6 +609,10 @@ function selectionPanel(own: OwnShipView, c: Contact): string {
       lines.push(`<div>${esc(b.name)}${c.colony ? ' · <span class="ok">колония с рынком</span>' : ''}</div>`);
       lines.push(`<div class="muted">Опасность: ${'▮'.repeat(Math.round(b.threat * 10))}${'▯'.repeat(10 - Math.round(b.threat * 10))}</div>`);
       lines.push(`<div class="muted">Добыча: ${Object.keys(b.loot).map((k) => RESOURCE_NAMES[k as Resource]).join(', ')}</div>`);
+      {
+        const hz = SURFACE_HAZARDS[c.biome];
+        lines.push(hz.name ? `<div class="warn">☣ ${esc(hz.name)}: <span class="muted">${esc(hz.hint)}</span></div>` : `<div class="muted">${esc(hz.hint)}</div>`);
+      }
       if (own.orbitId === c.id) {
         const chosen = own.crew.filter((x) => store.expeditionCrew.has(x.id));
         lines.push(

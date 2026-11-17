@@ -3,7 +3,7 @@ import type { Alert } from './alerts';
 import type { AimKind, Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, SignalKind, ThoughtKind, TraitKind } from './defs';
 import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry, SurfaceActor, WorkPriority } from './state';
 
-export const PROTOCOL_VERSION = 12;
+export const PROTOCOL_VERSION = 13;
 
 export type Command =
   | { c: 'move'; x: number; y: number }
@@ -224,7 +224,7 @@ export interface SurfaceView {
   marked: number[];
   nodes: { id: number; x: number; y: number; kind: number; amount: number }[];
   creatures: { id: number; type: CreatureType; x: number; y: number; hp: number }[];
-  crew: { id: number; name: string; robot: boolean; x: number; y: number; health: number; task: SurfaceActor['task'] }[];
+  crew: { id: number; name: string; robot: boolean; x: number; y: number; health: number; food: number; rest: number; task: SurfaceActor['task'] }[];
 }
 
 export interface ExpeditionView {

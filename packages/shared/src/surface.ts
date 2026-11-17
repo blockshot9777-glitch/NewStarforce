@@ -1,6 +1,15 @@
 // Поверхность планеты: генерация карты, работа команды, местная жизнь.
 // Карта — обычная сетка, поэтому поиск пути общий с кораблём (findPath из grid.ts).
 import {
+  EAT_RESTORE,
+  FOOD_DECAY,
+  REST_DECAY,
+  SURFACE_EAT_BELOW,
+  SURFACE_HAZARDS,
+  SURFACE_HUNGER_WARN,
+  SURFACE_SHUTTLE_REST,
+  SURFACE_STARVE_DAMAGE,
+  SURFACE_TIRED_MULT,
   BIOMES,
   CREATURES,
   CREW_GUN_COOLDOWN,
@@ -28,6 +37,7 @@ import {
 } from './defs';
 import { findPath, type Grid } from './grid';
 import type { Rng } from './rng';
+import { traitOf } from './mood';
 import type { Crew, Expedition, LogEntry, Surface, SurfaceCreature, Vec } from './state';
 
 export interface SurfaceContext {
@@ -260,6 +270,7 @@ export function allBoarded(e: Expedition): boolean {
 export function stepSurface(e: Expedition, dt: number, ctx: SurfaceContext): Crew[] {
   const s = e.surface;
   const def = SURFACE_BIOMES[ctx.biome];
+  const hazard = SURFACE_HAZARDS[ctx.biome];
   s.elapsed += dt;
 
   // Новые хищники — всё чаще, чем дольше команда на планете.
@@ -278,9 +289,31 @@ export function stepSurface(e: Expedition, dt: number, ctx: SurfaceContext): Cre
     const a = s.actors.find((x) => x.crewId === c.id);
     if (!a) continue;
     a.cooldown = Math.max(0, a.cooldown - dt);
-    const speed = SURFACE_CREW_SPEED * (c.robot ? ROBOT_SPEED_MULT * 1.4 : 1);
+    // Нужды на поверхности: еда и силы уходят, климат и яд планеты добавляют своё. Роботам всё равно.
+    const boarded = a.task === 'boarded';
+    if (!c.robot) {
+      const trait = traitOf(c);
+      const hurt = trait.damage ?? 1;
+      c.food = Math.max(0, c.food - FOOD_DECAY * (trait.foodDecay ?? 1) * (boarded ? 1 : hazard.food) * dt);
+      if (boarded) c.rest = Math.min(100, c.rest + SURFACE_SHUTTLE_REST * dt);
+      else c.rest = Math.max(0, c.rest - REST_DECAY * hazard.rest * dt);
+      // Едят из добытого на планете.
+      if (c.food < SURFACE_EAT_BELOW && (e.loot.food ?? 0) >= 1) {
+        e.loot.food = (e.loot.food ?? 0) - 1;
+        c.food = Math.min(100, c.food + EAT_RESTORE);
+        a.warned = false;
+      }
+      if (c.food <= 0) c.health -= SURFACE_STARVE_DAMAGE * hurt * dt;
+      else if (c.food < SURFACE_HUNGER_WARN && !a.warned) {
+        a.warned = true;
+        ctx.log(`${ctx.planetName}: ${c.name} голодает, а еды в добыче нет. Пора возвращаться.`, 'warn');
+      }
+      if (hazard.health > 0 && !boarded && !nearShuttle(s, c)) c.health -= hazard.health * hurt * dt;
+    }
+    const tired = !c.robot && c.rest <= 0 ? SURFACE_TIRED_MULT : 1;
+    const speed = SURFACE_CREW_SPEED * (c.robot ? ROBOT_SPEED_MULT * 1.4 : 1) * tired;
 
-    if (a.task === 'boarded') {
+    if (boarded) {
       c.health = Math.min(100, c.health + SURFACE_SHUTTLE_HEAL * dt);
       continue;
     }
@@ -359,7 +392,7 @@ export function stepSurface(e: Expedition, dt: number, ctx: SurfaceContext): Cre
     if (!node) continue;
     if (!moveAlong(c, speed, dt)) continue;
     const nd = def.nodes[node.kind];
-    node.work += (0.5 + c.skills[nd.skill] / 10) * dt;
+    node.work += (0.5 + c.skills[nd.skill] / 10) * tired * dt;
     if (node.work >= nd.work * SURFACE_WORK_MULT) {
       node.work = 0;
       const got = Math.min(SURFACE_GATHER_CHUNK, node.amount);
