@@ -3,7 +3,7 @@ import type { Alert } from './alerts';
 import type { AimKind, Biome, BuildKind, CreatureType, HullClass, ModuleType, NpcType, Physical, Resource, Resources, SignalKind, ThoughtKind, TraitKind } from './defs';
 import type { ChatEntry, CrewSkills, CrewState, Fx, JobKind, LogEntry, SurfaceActor, WorkPriority } from './state';
 
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 12;
 
 export type Command =
   | { c: 'move'; x: number; y: number }
@@ -242,7 +242,15 @@ export interface ExpeditionView {
 export interface Snapshot {
   t: 'snap';
   tick: number;
-  me: { id: number; name: string; kills: number; deaths: number; respawnIn: number };
+  me: {
+    id: number;
+    name: string;
+    kills: number;
+    deaths: number;
+    respawnIn: number;
+    /** Текущая задача капитана или null, если все выполнены. */
+    guide: { index: number; total: number; title: string; text: string; reward: number } | null;
+  };
   systemId: number;
   ship: OwnShipView | null;
   contacts: Contact[];

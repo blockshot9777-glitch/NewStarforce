@@ -39,6 +39,8 @@ import {
   SIGNAL_SPAWN_CHANCE,
   SIGNAL_SURVIVOR_REWARD,
   SIGNAL_TTL_SECONDS,
+  GUIDE,
+  type GuideStepId,
   AIM_ACCURACY,
   AIM_KINDS,
   AIM_MODULES,
@@ -235,6 +237,11 @@ export class World {
         if (c.carry === undefined) c.carry = null;
       }
     }
+    for (const p of state.players) {
+      // Сохранения до задач капитана: начинают с первой.
+      if (!Number.isInteger(p.guide) || p.guide < 0) p.guide = 0;
+      p.stats = { signals: p.stats?.signals ?? 0, landings: p.stats?.landings ?? 0, jumps: p.stats?.jumps ?? 0 };
+    }
     // Сохранения до поверхности планет: таймерная экспедиция сразу возвращается на корабль с добычей.
     const legacy = state.expeditions.filter((e) => !e.surface);
     state.expeditions = state.expeditions.filter((e) => e.surface);
@@ -391,6 +398,8 @@ export class World {
       kills: 0,
       deaths: 0,
       inbox: [],
+      guide: 0,
+      stats: { signals: 0, landings: 0, jumps: 0 },
     };
     this.state.players.push(player);
     this.spawnShip(player);
@@ -516,6 +525,7 @@ export class World {
       if (this.state.tick % (TICK_RATE * 5) === 0) this.maintainPopulation(sys);
     }
     this.updateExpeditions(dt);
+    if (this.state.tick % TICK_RATE === 0) this.updateGuide();
     for (const p of this.state.players) {
       if (!p.online || p.shipId !== null) continue;
       p.respawnIn -= dt;
@@ -634,6 +644,7 @@ export class World {
         ship.targetId = null;
         ship.jump = null;
         this.log(owner, `Прыжок завершён: система «${STAR_SYSTEMS[to].name}».`, 'good');
+        if (owner) owner.stats.jumps++;
       }
     }
 
@@ -1054,6 +1065,44 @@ export class World {
     if (sys.signals.length < SIGNAL_MAX_PER_SYSTEM && this.rng.chance(SIGNAL_SPAWN_CHANCE)) this.spawnSignal(sys);
   }
 
+  // ---------- Задачи капитана ----------
+
+  /** Выполнено ли условие шага. */
+  private guideDone(id: GuideStepId, p: Player, ship: Ship): boolean {
+    switch (id) {
+      case 'move':
+        return Math.hypot(ship.vx, ship.vy) > 5;
+      case 'mine':
+        return ship.modules.some((m) => m.type === 'mining_laser' && m.active);
+      case 'build':
+        // Заделка пробоины (бесплатный чертёж) стройкой не считается.
+        return ship.blueprints.some((b) => !b.free && !b.remove);
+      case 'signal':
+        return p.stats.signals > 0;
+      case 'land':
+        return p.stats.landings > 0;
+      case 'kill':
+        return p.kills > 0;
+      case 'jump':
+        return p.stats.jumps > 0;
+    }
+  }
+
+  /** Раз в секунду: выполненная задача даёт награду и открывает следующую. */
+  private updateGuide(): void {
+    for (const p of this.state.players) {
+      if (!p.online || p.guide >= GUIDE.length) continue;
+      const ship = this.shipOf(p);
+      if (!ship) continue;
+      const step = GUIDE[p.guide];
+      if (!this.guideDone(step.id, p, ship)) continue;
+      p.guide++;
+      ship.res.credits += step.reward;
+      const next = GUIDE[p.guide];
+      this.log(p, `Задача выполнена: ${step.title}. Награда: ${step.reward} кредитов.${next ? ` Дальше — ${next.title.toLowerCase()}.` : ' Вы готовы, капитан: дальше — сами.'}`, 'good');
+    }
+  }
+
   // ---------- События в космосе ----------
 
   /** Новый сигнал в системе: вид — по весам SIGNALS, место — вне безопасных зон. */
@@ -1127,6 +1176,7 @@ export class World {
       }
     }
     sys.signals = sys.signals.filter((sg) => sg !== signal);
+    player.stats.signals++;
     let text = `${def.name}: ${out.text}`;
     if (out.gain) {
       const gain: Partial<Resources> = {};
@@ -1391,6 +1441,7 @@ export class World {
     ship.crew = ship.crew.filter((c) => !crew.includes(c));
     const surface = generateSurface(this.rng, planet.biome, this.nextId);
     landCrew(surface, crew);
+    player.stats.landings++;
     this.state.expeditions.push({
       id: this.nextId(),
       shipId: ship.id,
@@ -1630,7 +1681,14 @@ export class World {
     return {
       t: 'snap',
       tick: this.state.tick,
-      me: { id: player.id, name: player.name, kills: player.kills, deaths: player.deaths, respawnIn: Math.max(0, player.respawnIn) },
+      me: {
+        id: player.id,
+        name: player.name,
+        kills: player.kills,
+        deaths: player.deaths,
+        respawnIn: Math.max(0, player.respawnIn),
+        guide: player.guide < GUIDE.length ? { index: player.guide, total: GUIDE.length, title: GUIDE[player.guide].title, text: GUIDE[player.guide].text, reward: GUIDE[player.guide].reward } : null,
+      },
       systemId,
       ship: ship ? this.ownShipView(ship, sys) : null,
       contacts,

@@ -941,3 +941,55 @@ button.aim .mini {
   font-size: 11px;
   animation: alert-pulse 1s infinite;
 }
+
+/* Задача капитана. */
+.guide {
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(105, 240, 174, 0.4);
+  border-left: 3px solid var(--ok);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+}
+.guide-head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.guide-reward {
+  color: #ffd740;
+}
+.guide-title {
+  margin: 2px 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ok);
+}
+.guide-text {
+  line-height: 1.4;
+}
+.guide-dots {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.guide-dots i {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.guide-dots i.done {
+  background: var(--ok);
+}
+.guide-dots i.now {
+  background: #ffd740;
+  box-shadow: 0 0 6px #ffd740;
+}

@@ -99,7 +99,10 @@ npm start          # сборка клиента + сервер на :8787
     врага `Npc.sub` и их починка — `npcSub`, `damageNpc`, `updateNpcs` в `world.ts`; по кораблям игроков прицел
     бьёт в модули (`AIM_MODULES`, `damageShip`); баланс — `AIM_*`, `NPC_SUB_*` в `defs.ts`; в снимке — `aim` и
     `sub` у контакта `npc`; выбор — `aimPanel` в `ui.ts`, клавиши 1–4, метки систем — `drawNpc`. Тесты — `aim.test.ts`.
-11. Далее — `docs/ROADMAP.md`, фазы 3–4.
+11. **Задачи капитана (ввод в игру) — сделано.** Шаги и награды — `GUIDE` в `defs.ts`; условия — `guideDone`,
+    проверка раз в секунду — `updateGuide` в `world.ts`; `Player.guide`/`Player.stats`; в снимке — `me.guide`;
+    карточка — `renderAlerts` в `ui.ts`. Тесты — `guide.test.ts`. Новый шаг = запись в `GUIDE` + условие в `guideDone`.
+12. Далее — `docs/ROADMAP.md`, фазы 3–4.
 
 ## Арт
 

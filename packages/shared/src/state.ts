@@ -361,6 +361,10 @@ export interface Player {
   kills: number;
   deaths: number;
   inbox: LogEntry[];
+  /** Номер текущей задачи капитана (GUIDE); равен длине списка — все выполнены. */
+  guide: number;
+  /** Счётчики для задач и будущей статистики. */
+  stats: { signals: number; landings: number; jumps: number };
 }
 
 export interface LogEntry {

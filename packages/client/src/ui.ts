@@ -728,11 +728,19 @@ function renderGalaxy(own: OwnShipView | null, systemId: number): void {
 /** Предупреждения как в RimWorld: столбик слева, тревоги красным, подсказка — при наведении. */
 function renderAlerts(own: OwnShipView | null): void {
   const alerts = own?.alerts ?? [];
+  // Текущая задача капитана — над предупреждениями (на планете не показываем: там свои заботы).
+  const g = store.mode !== 'planet' ? store.snap?.me.guide : null;
+  const guide = g
+    ? `<div class="guide"><div class="guide-head"><span>Задача ${g.index + 1}/${g.total}</span><span class="guide-reward">+${g.reward}₵</span></div>
+       <div class="guide-title">${esc(g.title)}</div><div class="guide-text">${esc(g.text)}</div>
+       <div class="guide-dots">${Array.from({ length: g.total }, (_, i) => `<i class="${i < g.index ? 'done' : i === g.index ? 'now' : ''}"></i>`).join('')}</div></div>`
+    : '';
   setHtml(
     $('alerts'),
-    alerts
-      .map((a) => `<div class="alert alert-${a.level}" title="${esc(a.hint)}">${a.level === 'bad' ? '⚠' : '•'} ${esc(a.text)}<div class="alert-hint">${esc(a.hint)}</div></div>`)
-      .join(''),
+    guide +
+      alerts
+        .map((a) => `<div class="alert alert-${a.level}" title="${esc(a.hint)}">${a.level === 'bad' ? '⚠' : '•'} ${esc(a.text)}<div class="alert-hint">${esc(a.hint)}</div></div>`)
+        .join(''),
   );
 }
 
